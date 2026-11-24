@@ -1,0 +1,156 @@
+import flpianoroll as flp
+
+NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+SCALES = {
+    "Major": [0, 2, 4, 5, 7, 9, 11],
+    "Minor": [0, 2, 3, 5, 7, 8, 10],
+    "Harmonic minor": [0, 2, 3, 5, 7, 8, 11],
+    "Dorian": [0, 2, 3, 5, 7, 9, 10],
+    "Mixolydian": [0, 2, 4, 5, 7, 9, 10],
+    "Pentatonic major": [0, 2, 4, 7, 9],
+    "Pentatonic minor": [0, 3, 5, 7, 10],
+}
+SCALE_LIST = list(SCALES.keys())
+GRIDS = ["Off", "1/4", "1/8", "1/16", "1/32", "1/8 triplet", "1/16 triplet"]
+GRID_BEATS = [0, 1.0, 0.5, 0.25, 0.125, 1.0 / 3, 1.0 / 6]
+SCALE_MODES = ["Off", "Use key below", "Use FL snap-to-scale"]
+MONO_MODES = ["Keep chords", "Mono: highest note", "Mono: lowest note", "Mono: loudest note"]
+
+
+def createDialog():
+    form = flp.ScriptDialog("InkBeat Cleanup",
+                            "Clean up notes transcribed from audio. Works on selected notes, or all notes.")
+    form.AddInputCombo("Quantize grid", GRIDS, 3)
+    form.AddInputKnob("Quantize strength %", 60, 0, 100)
+    form.AddInputCheckbox("Quantize note ends", False)
+    form.AddInputKnobInt("Remove notes shorter than (1/64 steps)", 0, 0, 16)
+    form.AddInputKnob("Remove notes quieter than %", 0, 0, 100)
+    form.AddInputCombo("Polyphony", MONO_MODES, 0)
+    form.AddInputCheckbox("Legato (close gaps in mono lines)", False)
+    form.AddInputCombo("Snap to scale", SCALE_MODES, 0)
+    form.AddInputCombo("Key", NOTE_NAMES, 9)
+    form.AddInputCombo("Scale", SCALE_LIST, 1)
+    form.AddInputKnob("Velocity: keep dynamics %", 100, 0, 100)
+    form.AddInputKnob("Velocity: target %", 80, 1, 100)
+    form.AddInputKnobInt("Transpose (semitones)", 0, -24, 24)
+    return form
+
+
+def _collect():
+    notes = []
+    any_sel = False
+    for i in range(flp.score.noteCount):
+        n = flp.score.getNote(i)
+        if n.selected:
+            any_sel = True
+    for i in range(flp.score.noteCount):
+        n = flp.score.getNote(i)
+        if (not any_sel) or n.selected:
+            notes.append((i, n))
+    return notes
+
+
+def _copy(n):
+    c = flp.Note()
+    for attr in ("number", "time", "length", "group", "pan", "velocity", "release", "color", "fcut", "fres",
+                 "pitchofs", "slide", "porta", "muted", "selected", "repeats"):
+        try:
+            setattr(c, attr, getattr(n, attr))
+        except Exception:
+            pass
+    return c
+
+
+def _scale_set(form):
+    mode = int(form.GetInputValue("Snap to scale"))
+    if mode == 0:
+        return None
+    if mode == 2:
+        try:
+            helper = [int(x) for x in str(flp.score.snap_scale_helper).split(",")]
+            pcs = {i for i, v in enumerate(helper[:12]) if v == 0}
+            if pcs and len(pcs) < 12:
+                return pcs
+        except Exception:
+            pass
+        return None
+    root = int(form.GetInputValue("Key"))
+    sc = SCALES[SCALE_LIST[int(form.GetInputValue("Scale"))]]
+    return {(root + i) % 12 for i in sc}
+
+
+def _snap(pitch, pcs):
+    if pcs is None or pitch % 12 in pcs:
+        return pitch
+    for d in (1, -1, 2, -2):
+        if (pitch + d) % 12 in pcs:
+            return pitch + d
+    return pitch
+
+
+def apply(form):
+    ppq = flp.score.PPQ
+    items = _collect()
+    if not items:
+        return
+    grid = GRID_BEATS[int(form.GetInputValue("Quantize grid"))] * ppq
+    q = float(form.GetInputValue("Quantize strength %")) / 100.0
+    q_ends = bool(form.GetInputValue("Quantize note ends"))
+    min_len_ticks = int(form.GetInputValue("Remove notes shorter than (1/64 steps)")) * ppq / 16.0
+    min_vel = float(form.GetInputValue("Remove notes quieter than %")) / 100.0
+    poly = int(form.GetInputValue("Polyphony"))
+    legato = bool(form.GetInputValue("Legato (close gaps in mono lines)"))
+    pcs = _scale_set(form)
+    keep_dyn = float(form.GetInputValue("Velocity: keep dynamics %")) / 100.0
+    target = float(form.GetInputValue("Velocity: target %")) / 100.0
+    transpose = int(form.GetInputValue("Transpose (semitones)"))
+
+    new = []
+    for _, n in items:
+        c = _copy(n)
+        if c.length < min_len_ticks or c.velocity < min_vel:
+            continue
+        if grid > 0 and q > 0:
+            qt = round(c.time / grid) * grid
+            end = c.time + c.length
+            c.time = int(round(c.time + (qt - c.time) * q))
+            if q_ends:
+                qe = round(end / grid) * grid
+                end = end + (qe - end) * q
+            c.length = max(int(grid / 2) if grid else 1, int(round(end - c.time)))
+        c.number = max(0, min(127, _snap(c.number + transpose, pcs)))
+        c.velocity = max(0.01, min(1.0, target + (c.velocity - target) * keep_dyn))
+        new.append(c)
+
+    if poly > 0 and new:
+        new.sort(key=lambda x: (x.time, x.number))
+        groups = []
+        for c in new:
+            if groups and abs(c.time - groups[-1][0].time) <= ppq / 16:
+                groups[-1].append(c)
+            else:
+                groups.append([c])
+        mono = []
+        for g in groups:
+            if poly == 1:
+                mono.append(max(g, key=lambda x: x.number))
+            elif poly == 2:
+                mono.append(min(g, key=lambda x: x.number))
+            else:
+                mono.append(max(g, key=lambda x: x.velocity))
+        for a, b in zip(mono, mono[1:]):
+            if a.time + a.length > b.time:
+                a.length = max(1, b.time - a.time)
+            elif legato:
+                a.length = b.time - a.time
+        new = mono
+    elif legato and new:
+        new.sort(key=lambda x: x.time)
+        for a, b in zip(new, new[1:]):
+            if b.time > a.time and a.time + a.length < b.time:
+                a.length = b.time - a.time
+
+    for idx, _ in sorted(items, key=lambda x: -x[0]):
+        flp.score.deleteNote(idx)
+    for c in new:
+        flp.score.addNote(c)
