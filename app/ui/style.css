@@ -763,3 +763,10 @@ input[type=range].mx-vol::-webkit-slider-thumb { width: 22px; height: 12px; bord
 .ex-vers-h { margin-bottom: 4px; }
 .lane-head.frozen { background: linear-gradient(90deg, #60a5fa14, transparent); }
 .lane-head.frozen .lh-btn.src { color: #60a5fa; border-color: #60a5fa66; }
+.vst-top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.vst-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 8px; }
+.vst-cols .lib-list { max-height: 300px; overflow-y: auto; }
+.vst-inst { margin-top: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg2); }
+.vst-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.vst-row select { flex: 1; min-width: 180px; }
+#vst-open-ed { margin-top: 8px; }

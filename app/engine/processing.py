@@ -19,7 +19,8 @@ OPS = {
     "debleed": "Прибрати залишки інших інструментів", "deess": "Де-есер (приглушити «с», «ш»)",
     "normalize": "Нормалізація", "reverse": "Реверс", "gain": "Гучність", "gate": "Гейт (тиша між фразами)",
     "pitchedit": "Редактор висоти нот", "breath": "Прибрати вдихи й клацання", "rider": "Вокал-райдер (рівна гучність)",
-    "align": "Вирівнювання за часом",
+    "align": "Вирівнювання за часом", "vst": "VST-плагін", "deshimmer": "Прибрати цифрові артефакти", "dereverb": "Прибрати реверберацію",
+    "highs": "Відновити верхи", "drumreplace": "Заміна барабанів", "quantize": "Квантування аудіо",
 }
 
 
@@ -457,6 +458,36 @@ def apply_op(pdir: Path, project: dict, base: str, source: str | None, op: str, 
         g, gsr = load_audio(gpath, sr)
         g = g[:, a:b] if g.shape[1] >= b else np.pad(g, ((0, 0), (0, max(0, b - g.shape[1]))))[:, a:b]
         res, stats = align(y, sr, g, float(p.get("strength", 1.0)), float(p.get("max_ms", 150)) / 1000, progress)
+    elif op in ("deshimmer", "dereverb", "highs", "drumreplace", "quantize"):
+        from . import fix as FX
+
+        if op == "deshimmer":
+            res, stats = FX.deshimmer(y, sr, float(p.get("amount", 0.6)), float(p.get("freq", 6000)), progress)
+        elif op == "dereverb":
+            res, stats = FX.dereverb(y, sr, float(p.get("amount", 0.6)), float(p.get("rt", 0.6)), float(p.get("floor_db", -14)), progress)
+        elif op == "highs":
+            res, stats = FX.restore_highs(y, sr, float(p.get("amount", 0.5)), float(p.get("cutoff", 0) or 0), progress)
+        elif op == "drumreplace":
+            res, stats = FX.drum_replace(y, sr, p.get("kick", "synth:kick"), p.get("snare", "synth:snare"), p.get("hat", "off"),
+                                         float(p.get("level_db", 0)), p.get("mode", "layer"), bool(p.get("follow", True)),
+                                         float(p.get("sensitivity", 0.5)), pdir, progress)
+        else:
+            step = float(p.get("grid_beats", 0.25)) * float(p.get("period", 0.5))
+            off = (-float(p.get("pad", 0)) - (a / sr if window else 0)) % step
+            res, stats = FX.quantize_audio(y, sr, step, off, float(p.get("strength", 0.8)), None, progress)
+    elif op == "vst":
+        from .vst import process_array
+
+        if not p.get("path") and p.get("plugin"):
+            p["path"], _, nm = str(p["plugin"]).partition("::")
+            p["name"] = nm or None
+        if not p.get("path"):
+            raise ValueError("Виберіть VST-плагін.")
+        res = process_array(y, sr, p["path"], p.get("name"), p.get("state"))
+        mix = float(p.get("mix", 1.0))
+        if mix < 0.999:
+            res = res[:, : y.shape[1]] * mix + y * (1 - mix)
+        stats = {"plugin": p.get("label") or p.get("name") or Path(p["path"]).stem}
     elif op == "reverse":
         res = full[:, ::-1][:, a:b].copy() if window else full[:, ::-1].copy()
     else:

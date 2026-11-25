@@ -845,7 +845,7 @@ async function recStart() {
   const A = ensureCtx();
   await A.ctx.resume();
   await REC.ctx.resume();
-  const bpb = S.B.timing.bpb, punch = S.playBeat;
+  const bpb = S.B.timing.bpb, punch = S.loop && S.loop.on ? S.loop.a : S.playBeat;
   const from = Math.max(0, punch - o.countIn * bpb);
   REC.saved = { metro: S.metro, mutes: {} };
   S.metro = o.metro;
@@ -871,20 +871,25 @@ function recPlayFrom(cur) {
   cur.startCtx = S.startCtx;
   cur.startBeat = S.startBeat;
 }
+function recLoopLen() {
+  if (S.loop && S.loop.on && S.loop.b > S.loop.a) return S.loop.b - S.loop.a;
+  const o = recOpts();
+  return o.loop ? o.loop * S.B.timing.bpb : 0;
+}
 function recTick() {
   const cur = REC.cur;
   if (!cur) return;
   const o = recOpts(), P = period(), bpb = S.B.timing.bpb, b = S.playBeat;
-  if (o.loop && b >= cur.punch + o.loop * bpb) return recLoopWrap();
+  if (recLoopLen() && b >= cur.punch + recLoopLen()) return recLoopWrap();
   const st = $("#rec-state");
-  if (st) st.textContent = b < cur.punch ? `Відлік… ${Math.ceil(cur.punch - b)}` : `Іде запис${o.loop ? ` · коло ${cur.pass}` : ""} · ${mmss((b - cur.punch) * P)}`;
+  if (st) st.textContent = b < cur.punch ? `Відлік… ${Math.ceil(cur.punch - b)}` : `Іде запис${recLoopLen() ? ` · коло ${cur.pass}` : ""} · ${mmss((b - cur.punch) * P)}`;
   requestAnimationFrame(recTick);
 }
 function recLoopWrap() {
   const old = REC.cur, o = recOpts(), bpb = S.B.timing.bpb;
   const nxt = { chunks: [], punch: old.punch, from: old.from, sr: old.sr, lat: old.lat, hits: 0, total: 0, pass: old.pass + 1 };
   REC.cur = nxt;
-  makeTake(old, old.punch + o.loop * bpb);
+  makeTake(old, old.punch + recLoopLen());
   stopPlay();
   recPlayFrom(nxt);
   renderTakes();
@@ -924,8 +929,8 @@ function recStop() {
   applyGains();
   renderHeads();
   $("#rec").classList.remove("recording");
-  const tk = makeTake(cur, recOpts().loop ? cur.punch + recOpts().loop * S.B.timing.bpb : null);
-  if (!tk && !(recOpts().loop && REC.takes.length)) toast("Запис занадто короткий.", true);
+  const tk = makeTake(cur, recLoopLen() ? cur.punch + recLoopLen() : null);
+  if (!tk && !(recLoopLen() && REC.takes.length)) toast("Запис занадто короткий.", true);
   else if (tk && tk.peak < 0.03) toast("Дуже тихий запис — перевірте мікрофон або додайте «Вхід».", true);
   else if (tk && tk.peak > 0.99) toast("Запис перевантажений (кліпінг). Відсуньтесь від мікрофона або зменшіть «Вхід».", true);
   renderRecorder();

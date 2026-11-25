@@ -13,6 +13,7 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 
+from .engine import care as CARE
 from .engine import extras as X
 from .engine import project as P
 
@@ -220,6 +221,10 @@ def projects():
 
 @app.get("/api/project/<pid>")
 def project_get(pid):
+    try:
+        CARE.recover_mix(P.workspace() / Path(pid).name)
+    except Exception:
+        pass
     _pdir(pid)
     return jsonify(P.build(pid))
 
@@ -697,3 +702,167 @@ def project_pitchmap(pid):
 
     threading.Thread(target=work, daemon=True).start()
     return jsonify({"job": jid})
+
+
+@app.post("/api/report")
+def make_report():
+    j = request.get_json(force=True) or {}
+    jobs = [x.public() for x in JOBS.values()] + [{k: v for k, v in x.items() if k != "result"} for x in PROC_JOBS.values()]
+    dest = CARE.report(j.get("ui_errors") or [], jobs, j.get("note", ""))
+    try:
+        _open_folder(dest.parent)
+    except Exception:
+        pass
+    return jsonify({"path": str(dest)})
+
+
+def _job_thread(fn):
+    jid = uuid.uuid4().hex[:10]
+    job = {"id": jid, "status": "running", "progress": 0.0, "result": None, "error": None}
+    PROC_JOBS[jid] = job
+
+    def work():
+        try:
+            job["result"] = fn(lambda f: job.__setitem__("progress", float(f)))
+            job["status"] = "done"
+        except Exception as e:
+            job["status"] = "error"
+            job["error"] = _friendly(e) if not isinstance(e, (ValueError, RuntimeError)) else str(e)
+            job["trace"] = traceback.format_exc()[-1500:]
+
+    threading.Thread(target=work, daemon=True).start()
+    return jsonify({"job": jid})
+
+
+def _incoming_file(kind):
+    if request.files.get("file"):
+        f = request.files["file"]
+        tmpd = P.workspace() / "_uploads"
+        tmpd.mkdir(parents=True, exist_ok=True)
+        dest = tmpd / f"{kind}-{uuid.uuid4().hex[:8]}.zip"
+        f.save(dest)
+        return dest, True
+    j = request.get_json(force=True, silent=True) or {}
+    pth = Path(j.get("path", ""))
+    if not pth.is_file():
+        abort(400)
+    return pth, False
+
+
+@app.post("/api/update")
+def update_app():
+    src, tmp = _incoming_file("upd")
+
+    def fn(prog):
+        try:
+            return CARE.update_from_zip(src, prog)
+        finally:
+            if tmp:
+                src.unlink(missing_ok=True)
+
+    return _job_thread(fn)
+
+
+@app.get("/api/project/<pid>/archive")
+def project_archive(pid):
+    d = _pdir(pid)
+    p = P.load_project(pid)
+    tmpd = P.workspace() / "_uploads"
+    tmpd.mkdir(parents=True, exist_ok=True)
+    for old in tmpd.glob("arc-*.zip"):
+        old.unlink(missing_ok=True)
+    dest = tmpd / f"arc-{uuid.uuid4().hex[:6]}.zip"
+    CARE.archive(d.name, dest)
+    return send_file(dest, as_attachment=True, download_name=f"{P.slugify(p['title'])}.inkbeat.zip", mimetype="application/zip")
+
+
+@app.post("/api/projects/import")
+def projects_import():
+    src, tmp = _incoming_file("imp")
+
+    def fn(prog):
+        try:
+            pid = CARE.import_archive(src)
+            P.build(pid)
+            return {"pid": pid}
+        finally:
+            if tmp:
+                src.unlink(missing_ok=True)
+
+    return _job_thread(fn)
+
+
+@app.post("/api/project/<pid>/duplicate")
+def project_duplicate(pid):
+    d = _pdir(pid)
+    j = request.get_json(force=True, silent=True) or {}
+    npid = CARE.duplicate(d.name, j.get("title"))
+    P.build(npid)
+    return jsonify({"pid": npid})
+
+
+
+@app.get("/api/vst")
+def vst_list():
+    from .engine import vst as VST
+
+    return jsonify(VST.plugins())
+
+
+@app.post("/api/vst/scan")
+def vst_scan():
+    from .engine import vst as VST
+
+    force = bool((request.get_json(force=True, silent=True) or {}).get("force"))
+    return _job_thread(lambda prog: VST.scan(prog, force))
+
+
+@app.post("/api/vst/folders")
+def vst_folders():
+    from .engine import vst as VST
+
+    j = request.get_json(force=True) or {}
+    c = VST.config()
+    f = (j.get("folder") or "").strip()
+    if j.get("remove"):
+        c["folders"] = [x for x in c["folders"] if x != f]
+    elif f and f not in c["folders"]:
+        if not Path(f).exists():
+            return jsonify({"error": "Папку не знайдено."}), 400
+        c["folders"].append(f)
+    VST.save_config(c)
+    return jsonify(VST.plugins())
+
+
+@app.post("/api/vst/edit")
+def vst_edit():
+    from .engine import vst as VST
+
+    j = request.get_json(force=True) or {}
+    return _job_thread(lambda prog: VST.edit(j["path"], j.get("name"), j.get("state")))
+
+
+@app.post("/api/project/<pid>/vstrender")
+def vst_render(pid):
+    from .engine import vst as VST
+
+    d = _pdir(pid)
+    j = request.get_json(force=True) or {}
+
+    def fn(prog):
+        import soundfile as sf
+
+        prog(0.1)
+        notes = [n for n in j.get("notes", []) if n[0] + n[1] > 0]
+        shift = min([0.0] + [n[0] for n in notes])
+        notes = [[n[0] - shift, n[1], n[2], n[3]] for n in notes]
+        y = VST.render_notes(j["path"], j.get("name"), j.get("state"), notes, float(j.get("duration", 60)) - shift)
+        prog(0.7)
+        tmpf = d / "cache" / f"vst_{uuid.uuid4().hex[:6]}.wav"
+        sf.write(str(tmpf), y.T, 44100, subtype="FLOAT")
+        try:
+            return X.add_recording(pid, tmpf, shift, j.get("track_name") or "VST", j.get("kind") or "other", False)
+        finally:
+            tmpf.unlink(missing_ok=True)
+
+    return _job_thread(fn)

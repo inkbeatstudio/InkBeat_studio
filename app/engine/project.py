@@ -15,7 +15,7 @@ from . import cleanup, drums, harmony, midi_export, rhythm, samples, separation,
 from .jsonio import read_json, write_json
 from .transcribe import Note, Transcriber
 
-VERSION = "2.0.0"
+VERSION = "2.2.0"
 ANALYSIS_SR = 22050
 
 GRIDS = {"off": 0, "1/4": 1.0, "1/8": 0.5, "1/16": 0.25, "1/32": 0.125, "1/8T": 1 / 3, "1/16T": 1 / 6}

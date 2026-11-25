@@ -5,6 +5,26 @@ window.addEventListener("pywebviewready", () => {
   DESK.api = window.pywebview && window.pywebview.api;
   document.body.classList.add("desktop");
 });
+window.inkbeatAskClose = () => {
+  let m = document.getElementById("close-modal");
+  if (!m) {
+    m = document.createElement("div");
+    m.className = "modal";
+    m.id = "close-modal";
+    m.innerHTML = `<div class="modal-card" style="width:min(460px,92vw)"><div class="modal-head"><h3>Закрити InkBeat?</h3><button class="x" data-k="stay">&times;</button></div>
+      <div class="modal-body"><p>Зараз іде розбір або обробка звуку. Якщо закрити програму, робота перерветься, а незавершений результат не збережеться.</p>
+      <p class="muted">Порада: дочекайтеся кінця — прогрес видно у верхній панелі. Уже зроблені зміни в проєкті збережено.</p>
+      <div class="modal-actions"><button class="btn ghost" data-k="stay">Залишитися</button><button class="btn primary" data-k="quit">Закрити й перервати</button></div></div></div>`;
+    m.addEventListener("click", (e) => {
+      const k = e.target.dataset.k || (e.target === m ? "stay" : "");
+      if (k === "stay") m.hidden = true;
+      if (k === "quit" && DESK.api) DESK.api.force_close();
+    });
+    document.body.appendChild(m);
+  }
+  m.hidden = false;
+  m.querySelector('[data-k="stay"].btn').focus();
+};
 const LAYOUT_DEF = { side: true, sidew: 312, headw: 236, dock: true, dockh: 340 };
 const LAYOUTS = {
   "Стандарт": { side: true, sidew: 312, headw: 236, dock: true, dockh: 340 },

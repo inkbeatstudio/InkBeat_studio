@@ -88,6 +88,8 @@ def open_window(url):
 class DesktopApi:
     def __init__(self):
         self.window = None
+        self.restart_flag = False
+        self.force = False
 
     def _dialog(self, kind, multiple=False, types=()):
         import webview
@@ -104,6 +106,20 @@ class DesktopApi:
 
     def open_folder(self):
         return self._dialog("FOLDER")
+
+    def open_zip(self):
+        return self._dialog("OPEN", False, ("Архів (*.zip)", "Усі файли (*.*)"))
+
+    def force_close(self):
+        self.force = True
+        self.window.destroy()
+        return True
+
+    def restart(self):
+        self.restart_flag = True
+        self.force = True
+        self.window.destroy()
+        return True
 
     def fullscreen(self):
         self.window.toggle_fullscreen()
@@ -124,7 +140,7 @@ html,body{margin:0;height:100%;background:#0c0d11;color:#e9ebf1;font-family:'Seg
 
 FAIL = """<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:#0c0d11;color:#e9ebf1;font-family:'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center}
 div{max-width:560px;line-height:1.6}code{color:#ffb547}</style></head><body><div><h2>Не вдалося запустити рушій InkBeat</h2>
-<p>Запустіть <code>2_ЗАПУСТИТИ (Windows).bat</code> — у чорному вікні буде видно причину. Журнал: <code>{LOG}</code></p></div></body></html>"""
+<p>Відкрийте ярлик <code>Діагностика InkBeat</code> у меню «Пуск» — у вікні повідомлень буде видно причину. Журнал: <code>{LOG}</code></p><p>Якщо не допомагає, запустіть інсталятор InkBeat-Setup ще раз: він відновить програму, проєкти залишаться.</p></div></body></html>"""
 
 
 def server_main(port):
@@ -193,11 +209,25 @@ def desktop_main():
             return False
 
     def on_closing():
-        if busy():
-            return win.create_confirmation_dialog("InkBeat", "Зараз іде розбір або обробка. Закрити програму і перервати роботу?")
-        return True
+        if api.force or not busy():
+            return True
+        threading.Thread(target=lambda: win.evaluate_js("window.inkbeatAskClose ? inkbeatAskClose() : pywebview.api.force_close()"), daemon=True).start()
+        return False
+
+    def dark_frame():
+        try:
+            import ctypes
+
+            hwnd = ctypes.c_void_p(int(win.native.Handle.ToInt64()))
+            dwm = ctypes.windll.dwmapi
+            for attr, val in ((20, 1), (19, 1), (35, 0x00110D0C), (36, 0x00F1EBE9), (34, 0x00332824)):
+                v = ctypes.c_int(val)
+                dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v), ctypes.sizeof(v))
+        except Exception:
+            pass
 
     win.events.closing += on_closing
+    win.events.shown += dark_frame
     icon = ROOT / "app" / "ui" / "inkbeat.ico"
     try:
         webview.start(boot, private_mode=False, storage_path=str(store), icon=str(icon))
@@ -212,6 +242,8 @@ def desktop_main():
                 child.kill()
             except Exception:
                 pass
+    if api.restart_flag:
+        subprocess.Popen([sys.executable, str(ROOT / "run.py")], cwd=str(ROOT))
     return True
 
 
