@@ -188,6 +188,11 @@ def ping():
     return jsonify({"ok": True})
 
 
+@app.get("/api/busy")
+def busy_get():
+    return jsonify({"busy": busy()})
+
+
 def busy() -> bool:
     return any(j.status in ("queued", "running") for j in JOBS.values()) or \
         any(j.get("status") == "running" for j in PROC_JOBS.values())
