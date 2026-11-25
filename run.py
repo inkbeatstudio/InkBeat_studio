@@ -87,16 +87,16 @@ def open_window(url):
 
 class DesktopApi:
     def __init__(self):
-        self.window = None
-        self.restart_flag = False
-        self.force = False
+        self._window = None
+        self._restart = False
+        self._force = False
 
     def _dialog(self, kind, multiple=False, types=()):
         import webview
 
         fd = getattr(webview, "FileDialog", None)
         code = getattr(fd, kind) if fd else {"OPEN": 10, "FOLDER": 20, "SAVE": 30}[kind]
-        r = self.window.create_file_dialog(code, allow_multiple=multiple, file_types=types)
+        r = self._window.create_file_dialog(code, allow_multiple=multiple, file_types=types)
         if not r:
             return []
         return [str(x) for x in (r if isinstance(r, (list, tuple)) else [r])]
@@ -111,18 +111,18 @@ class DesktopApi:
         return self._dialog("OPEN", False, ("Архів (*.zip)", "Усі файли (*.*)"))
 
     def force_close(self):
-        self.force = True
-        self.window.destroy()
+        self._force = True
+        self._window.destroy()
         return True
 
     def restart(self):
-        self.restart_flag = True
-        self.force = True
-        self.window.destroy()
+        self._restart = True
+        self._force = True
+        self._window.destroy()
         return True
 
     def fullscreen(self):
-        self.window.toggle_fullscreen()
+        self._window.toggle_fullscreen()
         return True
 
     def info(self):
@@ -130,28 +130,108 @@ class DesktopApi:
 
 
 SPLASH = """<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-html,body{margin:0;height:100%;background:#0c0d11;color:#e9ebf1;font-family:'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center}
-.b{display:flex;flex-direction:column;align-items:center;gap:18px}.t{letter-spacing:.3em;font-weight:700;font-size:20px}
-.s{color:#8b91a3;font-size:13px}.bar{width:220px;height:3px;background:#242833;border-radius:2px;overflow:hidden}
-.bar i{display:block;width:40%;height:100%;background:#ffb547;animation:m 1.2s ease-in-out infinite}
-@keyframes m{0%{margin-left:-40%}100%{margin-left:100%}}</style></head><body><div class="b">
-<svg viewBox="0 0 32 32" width="64" height="64"><rect width="32" height="32" rx="7" fill="#1b1e26"/><g fill="#ffb547"><rect x="6" y="12" width="3" height="8" rx="1.5"/><rect x="11" y="7" width="3" height="18" rx="1.5"/><rect x="16" y="10" width="3" height="12" rx="1.5"/></g><g fill="#4fd1c5"><rect x="21" y="9" width="6" height="3" rx="1"/><rect x="21" y="15" width="4" height="3" rx="1"/><rect x="21" y="21" width="6" height="3" rx="1"/></g></svg>
-<div class="t">INKBEAT</div><div class="bar"><i></i></div><div class="s" id="m">Запуск… Перший запуск після встановлення може тривати до хвилини.</div></div></body></html>"""
+html,body{margin:0;height:100%;background:#0c0d11;color:#e9ebf1;font-family:'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;user-select:none;cursor:default}
+.b{display:flex;flex-direction:column;align-items:center;gap:16px;width:420px}.t{letter-spacing:.3em;font-weight:700;font-size:20px}
+.bar{width:100%;height:4px;background:#242833;border-radius:2px;overflow:hidden;position:relative}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#e0952a,#ffb547);border-radius:2px;transition:width .25s linear}
+.bar b{position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);width:30%;animation:g 1.6s ease-in-out infinite}
+@keyframes g{0%{margin-left:-30%}100%{margin-left:100%}}
+.row{display:flex;justify-content:space-between;width:100%;font-size:12px;color:#8b91a3;font-variant-numeric:tabular-nums}
+.s{color:#c9cdd8;font-size:14px;text-align:center;min-height:20px}.h{color:#8b91a3;font-size:12.5px;text-align:center;line-height:1.55;min-height:40px;opacity:0;transition:opacity .6s}
+.pulse{animation:p 2.4s ease-in-out infinite}@keyframes p{50%{opacity:.75}}</style></head><body><div class="b">
+<svg class="pulse" viewBox="0 0 32 32" width="64" height="64"><rect width="32" height="32" rx="7" fill="#1b1e26"/><g fill="#ffb547"><rect x="6" y="12" width="3" height="8" rx="1.5"/><rect x="11" y="7" width="3" height="18" rx="1.5"/><rect x="16" y="10" width="3" height="12" rx="1.5"/></g><g fill="#4fd1c5"><rect x="21" y="9" width="6" height="3" rx="1"/><rect x="21" y="15" width="4" height="3" rx="1"/><rect x="21" y="21" width="6" height="3" rx="1"/></g></svg>
+<div class="t">INKBEAT</div><div class="s" id="m">Запускаю програму…</div><div class="bar"><i id="f"></i><b></b></div>
+<div class="row"><span id="pc">0%</span><span id="tm">0:00</span></div><div class="h" id="h">Перший запуск після встановлення довший: Windows один раз перевіряє нові файли програми. Наступні запуски займатимуть кілька секунд.</div></div>
+<script>
+var cur=0,target=3,t0=Date.now(),f=document.getElementById('f'),pc=document.getElementById('pc'),tm=document.getElementById('tm'),h=document.getElementById('h');
+function stage(p,t){if(p>target)target=p;if(t)document.getElementById('m').textContent=t;}
+setInterval(function(){var cap=target>=100?100:Math.min(99,target+9);if(cur<target)cur+=Math.max(.6,(target-cur)*.25);else cur+=(cap-cur)*.006;if(cur>cap)cur=cap;
+f.style.width=cur.toFixed(1)+'%';pc.textContent=Math.floor(cur)+'%';var e=Math.floor((Date.now()-t0)/1000);tm.textContent=Math.floor(e/60)+':'+('0'+e%60).slice(-2);if(e>=12)h.style.opacity=1;},100);
+</script></body></html>"""
 
 FAIL = """<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:#0c0d11;color:#e9ebf1;font-family:'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center}
 div{max-width:560px;line-height:1.6}code{color:#ffb547}</style></head><body><div><h2>Не вдалося запустити рушій InkBeat</h2>
-<p>Відкрийте ярлик <code>Діагностика InkBeat</code> у меню «Пуск» — у вікні повідомлень буде видно причину. Журнал: <code>{LOG}</code></p><p>Якщо не допомагає, запустіть інсталятор InkBeat-Setup ще раз: він відновить програму, проєкти залишаться.</p></div></body></html>"""
+<p>Найчастіше допомагає просто запустити InkBeat ще раз.</p><p>Якщо ні — відкрийте ярлик <code>Діагностика InkBeat</code> у меню «Пуск» — у вікні повідомлень буде видно причину. Журнал: <code>{LOG}</code></p><p>Якщо не допомагає, запустіть інсталятор InkBeat-Setup ще раз: він відновить програму, проєкти залишаться.</p></div></body></html>"""
+
+
+def boot_stage(p, text):
+    path = os.environ.get("INKBEAT_BOOT")
+    if not path:
+        return
+    try:
+        import json
+
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"p": p, "t": text}, fh, ensure_ascii=False)
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def warm_engine():
+    try:
+        boot_stage(70, "Готую обчислювальний рушій…")
+        import torch
+
+        boot_stage(86, "Перевіряю відеокарту…")
+        torch.cuda.is_available()
+        boot_stage(93, "Завантажую модуль розділення доріжок…")
+        import demucs.pretrained
+    except Exception as e:
+        print("warm-up:", e)
+    boot_stage(100, "Відкриваю студію…")
 
 
 def server_main(port):
     import logging
 
+    boot_stage(8, "Завантажую математичні модулі…")
+    import numpy
+    import scipy.signal
+
+    boot_stage(24, "Завантажую модулі аналізу звуку…")
+    import librosa
+
+    boot_stage(46, "Готую інтерфейс студії…")
     from app import server as server_mod
     from app.server import app
 
+    boot_stage(62, "Запускаю рушій…")
     threading.Thread(target=watchdog, args=(server_mod,), daemon=True).start()
+    threading.Thread(target=warm_engine, daemon=True).start()
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
     app.run(host="127.0.0.1", port=port, threaded=True, debug=False, use_reloader=False)
+
+
+def dark_titlebar(seconds=15):
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32, dwm = ctypes.windll.user32, ctypes.windll.dwmapi
+        pid = os.getpid()
+        done = set()
+        proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+        def each(hwnd, _):
+            owner = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+            if owner.value == pid and hwnd not in done and user32.IsWindowVisible(hwnd) and user32.GetWindowTextLengthW(hwnd) > 0:
+                for attr, val in ((20, 1), (19, 1), (35, 0x00110D0C), (36, 0x00F1EBE9), (34, 0x00332824)):
+                    v = ctypes.c_int(val)
+                    dwm.DwmSetWindowAttribute(wintypes.HWND(hwnd), attr, ctypes.byref(v), ctypes.sizeof(v))
+                user32.SetWindowPos(wintypes.HWND(hwnd), None, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020)
+                done.add(hwnd)
+            return True
+
+        cb = proc(each)
+        end = time.time() + seconds
+        while time.time() < end:
+            user32.EnumWindows(cb, 0)
+            time.sleep(0.05 if not done else 0.5)
+    except Exception as e:
+        print("titlebar:", e)
 
 
 def desktop_main():
@@ -168,10 +248,17 @@ def desktop_main():
     logdir = Path.home() / ".inkbeat"
     logdir.mkdir(parents=True, exist_ok=True)
     child = None
+    bootfile = str(logdir / "boot-none.json")
     if running_instance():
         port = 47800
     else:
         port = free_port()
+        bootfile = str(logdir / f"boot-{port}.json")
+        try:
+            os.remove(bootfile)
+        except OSError:
+            pass
+        os.environ["INKBEAT_BOOT"] = bootfile
         quiet = sys.stdout is None or "pythonw" in Path(sys.executable).name.lower() or getattr(sys.stdout, "name", "") != "<stdout>"
         out = open(logdir / "server.log", "a", encoding="utf-8") if quiet else None
         child = subprocess.Popen([sys.executable, str(ROOT / "run.py"), "--server", str(port)], cwd=str(ROOT),
@@ -186,19 +273,46 @@ def desktop_main():
         pass
     win = webview.create_window("InkBeat", html=SPLASH, js_api=api, width=1500, height=920, min_size=(1100, 680),
                                 background_color="#0c0d11", maximized=True, zoomable=True)
-    api.window = win
+    api._window = win
+
+    def show(p, text):
+        try:
+            win.evaluate_js("window.stage && stage(%d, %s)" % (p, json.dumps(text, ensure_ascii=False)))
+        except Exception:
+            pass
+
+    def ping():
+        try:
+            with urllib.request.urlopen(url + "api/ping", data=b"", timeout=2) as r:
+                return r.status == 200
+        except Exception:
+            return False
 
     def boot():
-        for _ in range(1800):
+        threading.Thread(target=dark_titlebar, daemon=True).start()
+        last, alive_since, start = None, None, time.time()
+        while True:
             if child is not None and child.poll() is not None:
                 win.load_html(FAIL.replace("{LOG}", str(logdir / "server.log")))
                 return
+            st = None
             try:
-                with urllib.request.urlopen(url + "api/ping", data=b"", timeout=1) as r:
-                    if r.status == 200:
-                        break
+                st = json.loads(Path(bootfile).read_text(encoding="utf-8"))
             except Exception:
-                time.sleep(0.1)
+                pass
+            if st and (st.get("p"), st.get("t")) != last:
+                last = (st.get("p"), st.get("t"))
+                show(int(st.get("p") or 0), st.get("t") or "")
+            if ping():
+                alive_since = alive_since or time.time()
+                if child is None or (st and int(st.get("p") or 0) >= 100) or time.time() - alive_since > 240:
+                    break
+            elif time.time() - start > 900:
+                win.load_html(FAIL.replace("{LOG}", str(logdir / "server.log")))
+                return
+            time.sleep(0.25)
+        show(100, "Відкриваю студію…")
+        time.sleep(0.35)
         win.load_url(url)
 
     def busy():
@@ -209,25 +323,12 @@ def desktop_main():
             return False
 
     def on_closing():
-        if api.force or not busy():
+        if api._force or not busy():
             return True
         threading.Thread(target=lambda: win.evaluate_js("window.inkbeatAskClose ? inkbeatAskClose() : pywebview.api.force_close()"), daemon=True).start()
         return False
 
-    def dark_frame():
-        try:
-            import ctypes
-
-            hwnd = ctypes.c_void_p(int(win.native.Handle.ToInt64()))
-            dwm = ctypes.windll.dwmapi
-            for attr, val in ((20, 1), (19, 1), (35, 0x00110D0C), (36, 0x00F1EBE9), (34, 0x00332824)):
-                v = ctypes.c_int(val)
-                dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v), ctypes.sizeof(v))
-        except Exception:
-            pass
-
     win.events.closing += on_closing
-    win.events.shown += dark_frame
     icon = ROOT / "app" / "ui" / "inkbeat.ico"
     try:
         webview.start(boot, private_mode=False, storage_path=str(store), icon=str(icon))
@@ -242,7 +343,7 @@ def desktop_main():
                 child.kill()
             except Exception:
                 pass
-    if api.restart_flag:
+    if api._restart:
         subprocess.Popen([sys.executable, str(ROOT / "run.py")], cwd=str(ROOT))
     return True
 

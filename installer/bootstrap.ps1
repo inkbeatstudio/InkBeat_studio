@@ -14,15 +14,29 @@ New-Item -ItemType Directory -Force -Path $Tmp | Out-Null
 $PyVer = "3.11.9"
 $TorchVer = "2.6.0"
 $script:PyCode = 0
+$LogFile = Join-Path $Root "install.log"
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+$env:PIP_DISABLE_PIP_VERSION_CHECK = "1"
+$env:PIP_NO_CACHE_DIR = "1"
+$env:PIP_DEFAULT_TIMEOUT = "120"
+$env:PIP_RETRIES = "10"
+$env:PIP_NO_WARN_SCRIPT_LOCATION = "1"
+$PipTmp = Join-Path $Root "runtime_tmp"
+
+function Say([string]$m) {
+  Write-Output $m
+  try { Add-Content -LiteralPath $LogFile -Value $m -Encoding UTF8 } catch {}
+}
 
 function Get-File($url, $dest) {
   for ($i = 1; $i -le 3; $i++) {
     try {
-      Write-Output "download: $url"
+      Say "download: $url"
       Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
       if ((Get-Item -LiteralPath $dest).Length -gt 1000) { return }
     } catch {
-      Write-Output "attempt $i failed: $($_.Exception.Message)"
+      Say "attempt $i failed: $($_.Exception.Message)"
       Start-Sleep -Seconds (3 * $i)
     }
   }
@@ -31,7 +45,10 @@ function Get-File($url, $dest) {
 
 function Invoke-Py([string[]]$a, [switch]$Quiet) {
   $ErrorActionPreference = "Continue"
-  if ($Quiet) { & $Py @a *> $null } else { & $Py @a 2>&1 | ForEach-Object { Write-Output "$_" } }
+  New-Item -ItemType Directory -Force -Path $PipTmp | Out-Null
+  $env:TMP = $PipTmp
+  $env:TEMP = $PipTmp
+  if ($Quiet) { & $Py @a *> $null } else { & $Py @a 2>&1 | ForEach-Object { Say "$_" } }
   $script:PyCode = $LASTEXITCODE
 }
 
@@ -55,6 +72,12 @@ function Has-Nvidia {
   return $false
 }
 
+Say ""
+Say "=== step $Step  $(Get-Date -Format s)  gpu=$Gpu"
+try {
+  $drive = (Get-Item -LiteralPath $Root).PSDrive
+  if ($drive) { Say ("free disk: {0:N1} GB" -f ($drive.Free / 1GB)) }
+} catch {}
 try {
   switch ($Step) {
     "webview2" {
@@ -65,30 +88,31 @@ try {
       )
       $ok = $false
       foreach ($k in $keys) {
-        try { $pv = (Get-ItemProperty -LiteralPath $k -ErrorAction Stop).pv; if ($pv -and $pv -ne "0.0.0.0") { $ok = $true; Write-Output "WebView2 $pv" } } catch {}
+        if ($ok) { break }
+        try { $pv = (Get-ItemProperty -LiteralPath $k -ErrorAction Stop).pv; if ($pv -and $pv -ne "0.0.0.0") { $ok = $true; Say "WebView2 $pv" } } catch {}
       }
       if (-not $ok) {
         $f = Join-Path $Tmp "MicrosoftEdgeWebview2Setup.exe"
         Get-File "https://go.microsoft.com/fwlink/p/?LinkId=2124703" $f
         $p = Start-Process -FilePath $f -ArgumentList "/silent", "/install" -Wait -PassThru
-        Write-Output "WebView2 installer exit $($p.ExitCode)"
+        Say "WebView2 installer exit $($p.ExitCode)"
       }
     }
     "vcredist" {
       $ok = $false
       foreach ($k in @("HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64", "HKLM:\SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x64")) {
-        try { $r = Get-ItemProperty -LiteralPath $k -ErrorAction Stop; if ($r.Installed -eq 1 -and $r.Major -ge 14 -and $r.Minor -ge 30) { $ok = $true; Write-Output "VC++ $($r.Version)" } } catch {}
+        try { $r = Get-ItemProperty -LiteralPath $k -ErrorAction Stop; if ($r.Installed -eq 1 -and $r.Major -ge 14 -and $r.Minor -ge 30) { $ok = $true; Say "VC++ $($r.Version)" } } catch {}
       }
       if (-not $ok) {
         $f = Join-Path $Tmp "vc_redist.x64.exe"
         Get-File "https://aka.ms/vs/17/release/vc_redist.x64.exe" $f
         $p = Start-Process -FilePath $f -ArgumentList "/install", "/quiet", "/norestart" -Verb RunAs -Wait -PassThru
-        Write-Output "VC++ installer exit $($p.ExitCode)"
+        Say "VC++ installer exit $($p.ExitCode)"
         if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010 -and $p.ExitCode -ne 1638) { throw "VC++ runtime install failed: $($p.ExitCode)" }
       }
     }
     "python" {
-      if ((Test-Path -LiteralPath $Py) -and (Test-Path -LiteralPath (Join-Path $Rt "python311.zip"))) { Write-Output "python already present"; break }
+      if ((Test-Path -LiteralPath $Py) -and (Test-Path -LiteralPath (Join-Path $Rt "python311.zip"))) { Say "python already present"; break }
       if (Test-Path -LiteralPath $Rt) { Remove-Item -LiteralPath $Rt -Recurse -Force }
       New-Item -ItemType Directory -Force -Path $Rt | Out-Null
       $z = Join-Path $Tmp "python-embed.zip"
@@ -109,18 +133,22 @@ try {
       Run-Py @("-m", "pip", "install", "--upgrade", "--no-warn-script-location", "pip", "setuptools", "wheel")
     }
     "torch" {
-      $gpu = Has-Nvidia
-      Invoke-Py @("-c", "import sys, torch, torchaudio; sys.exit(0 if (torch.version.cuda or not $([int]$gpu)) else 3)") -Quiet
+      $gpu = $false
+      foreach ($x in @(Has-Nvidia)) { if ("$x" -eq "True") { $gpu = $true } }
+      $want = "0"
+      if ($gpu) { $want = "1" }
+      Say "NVIDIA detected: $gpu"
+      Invoke-Py @("-c", "import sys, torch, torchaudio; sys.exit(0 if (torch.version.cuda or not $want) else 3)") -Quiet
       if ($script:PyCode -eq 0) { Run-Py @("-c", "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"); break }
       if ($gpu) {
-        Write-Output "NVIDIA GPU found: installing CUDA build"
+        Say "NVIDIA GPU found: installing CUDA build"
         Invoke-Py @("-m", "pip", "install", "--no-warn-script-location", "torch==$TorchVer+cu124", "torchaudio==$TorchVer+cu124", "--index-url", "https://download.pytorch.org/whl/cu124")
         if ($script:PyCode -ne 0) {
-          Write-Output "CUDA build failed, falling back to CPU build"
+          Say "CUDA build failed, falling back to CPU build"
           Run-Py @("-m", "pip", "install", "--no-warn-script-location", "torch==$TorchVer+cpu", "torchaudio==$TorchVer+cpu", "--index-url", "https://download.pytorch.org/whl/cpu")
         }
       } else {
-        Write-Output "no NVIDIA GPU: installing CPU build"
+        Say "no NVIDIA GPU: installing CPU build"
         Run-Py @("-m", "pip", "install", "--no-warn-script-location", "torch==$TorchVer+cpu", "torchaudio==$TorchVer+cpu", "--index-url", "https://download.pytorch.org/whl/cpu")
       }
     }
@@ -128,7 +156,7 @@ try {
       $req = Join-Path $Root "requirements.txt"
       $hashFile = Join-Path $Rt "requirements.sha256"
       $h = (Get-FileHash -LiteralPath $req -Algorithm SHA256).Hash
-      if ((Test-Path -LiteralPath $hashFile) -and ((Get-Content -LiteralPath $hashFile -Raw).Trim() -eq $h)) { Write-Output "dependencies up to date"; break }
+      if ((Test-Path -LiteralPath $hashFile) -and ((Get-Content -LiteralPath $hashFile -Raw).Trim() -eq $h)) { Say "dependencies up to date"; break }
       Run-Py @("-m", "pip", "install", "--no-warn-script-location", "-r", $req)
       Set-Content -LiteralPath $hashFile -Encoding ASCII -Value $h
     }
@@ -137,9 +165,11 @@ try {
       try { Run-Py @("-c", "from demucs.pretrained import get_model; get_model('htdemucs_6s'); print('model OK')") } finally { Pop-Location }
     }
     "verify" {
+      if (Test-Path -LiteralPath $PipTmp) { Remove-Item -LiteralPath $PipTmp -Recurse -Force -ErrorAction SilentlyContinue }
       Push-Location $Root
       try {
         Run-Py @("-c", "import numpy, scipy, librosa, soundfile, flask, onnxruntime, mido, torch, demucs, webview; print('all modules OK'); print('cuda', torch.cuda.is_available())")
+        Run-Py @("-c", "import numpy as np, librosa, demucs.pretrained; from app import server; y = (np.random.randn(22050 * 4) * 0.1).astype('float32'); librosa.beat.beat_track(y=y, sr=22050); librosa.pyin(y[:44100], fmin=80, fmax=800, sr=22050); print('warm-up OK')")
       } finally { Pop-Location }
       Set-Content -LiteralPath (Join-Path $Rt "installed.ok") -Encoding ASCII -Value (Get-Date -Format s)
     }
@@ -147,6 +177,10 @@ try {
   }
   exit 0
 } catch {
-  Write-Output "ERROR: $($_.Exception.Message)"
+  Say "ERROR: $($_.Exception.Message)"
+  try {
+    $desk = [Environment]::GetFolderPath("Desktop")
+    if ($desk) { Copy-Item -LiteralPath $LogFile -Destination (Join-Path $desk "InkBeat - install log.txt") -Force }
+  } catch {}
   exit 1
 }

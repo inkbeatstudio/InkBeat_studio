@@ -103,7 +103,7 @@ FunctionEnd
   nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\installer\bootstrap.ps1" -Step ${NAME} -Root "$INSTDIR" -Gpu $R9'
   Pop $0
   ${If} $0 != 0
-    MessageBox MB_ICONEXCLAMATION|MB_ABORTRETRYIGNORE "Не вдалося виконати крок «${TEXT}».$\r$\n$\r$\nПеревірте підключення до інтернету і натисніть «Повторити». Подробиці — у списку над кнопками.$\r$\n$\r$\n«Пропустити» — продовжити без цього кроку (програма може працювати неповністю)." /SD IDABORT IDRETRY step_${NAME} IDIGNORE next_${NAME}
+    MessageBox MB_ICONEXCLAMATION|MB_ABORTRETRYIGNORE "Не вдалося виконати крок «${TEXT}».$\r$\n$\r$\nПеревірте підключення до інтернету і натисніть «Повторити». Повний журнал збережено на робочому столі: «InkBeat - install log.txt». Якщо помилка повторюється, надішліть цей файл.$\r$\n$\r$\n«Пропустити» — продовжити без цього кроку (програма може працювати неповністю)." /SD IDABORT IDRETRY step_${NAME} IDIGNORE next_${NAME}
     Abort "Встановлення перервано на кроці «${TEXT}»."
   ${EndIf}
   next_${NAME}:
@@ -154,7 +154,7 @@ Section "-Компоненти" SecDeps
   !insertmacro Step 5 8 "Завантажую обчислювальний рушій (найбільший крок)" torch
   !insertmacro Step 6 8 "Встановлюю модулі аналізу звуку, вікна й VST" deps
   !insertmacro Step 7 8 "Завантажую модель розділення доріжок" model
-  !insertmacro Step 8 8 "Перевіряю встановлення" verify
+  !insertmacro Step 8 8 "Перевіряю встановлення і готую перший запуск" verify
   DetailPrint " "
   DetailPrint "Готово."
 SectionEnd
