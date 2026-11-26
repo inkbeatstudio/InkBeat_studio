@@ -706,6 +706,30 @@ def video_support():
     return jsonify({"ffmpeg": bool(VID.ffmpeg_exe())})
 
 
+@app.get("/api/localfile")
+def local_file():
+    pth = Path(request.args.get("path", ""))
+    ok = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aif", ".aiff", ".opus", ".jpg", ".jpeg", ".png", ".webp", ".zip"}
+    if request.remote_addr not in ("127.0.0.1", "::1") or pth.suffix.lower() not in ok or not pth.is_file():
+        abort(404)
+    return send_file(pth, conditional=True)
+
+
+@app.get("/api/localdir")
+def local_dir():
+    d = Path(request.args.get("path", ""))
+    if request.remote_addr not in ("127.0.0.1", "::1") or not d.is_dir():
+        abort(404)
+    ok = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aif", ".aiff", ".opus"}
+    files = []
+    for f in sorted(d.rglob("*")):
+        if len(f.relative_to(d).parts) <= 3 and f.is_file() and f.suffix.lower() in ok and not f.name.startswith("."):
+            files.append(str(f))
+        if len(files) >= 64:
+            break
+    return jsonify({"files": files})
+
+
 @app.post("/api/projects/new")
 def projects_new():
     j = request.get_json(force=True, silent=True) or {}

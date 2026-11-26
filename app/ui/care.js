@@ -70,8 +70,8 @@ function pickZip() {
 }
 async function zipSource() {
   if (DESK.on && DESK.api.open_zip) {
-    const p = await DESK.api.open_zip();
-    return p && p[0] ? { path: p[0] } : null;
+    const p = await deskPaths(() => DESK.api.open_zip());
+    if (p !== null) return p[0] ? { path: p[0] } : null;
   }
   const f = await pickZip();
   return f ? { file: f } : null;

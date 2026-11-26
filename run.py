@@ -85,6 +85,16 @@ def open_window(url):
     webbrowser.open(url)
 
 
+def log_line(text):
+    try:
+        d = Path.home() / ".inkbeat"
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / "inkbeat.log", "a", encoding="utf-8") as fh:
+            fh.write(time.strftime("%Y-%m-%d %H:%M:%S ") + str(text) + "\n")
+    except Exception:
+        pass
+
+
 class DesktopApi:
     def __init__(self):
         self._window = None
@@ -95,14 +105,36 @@ class DesktopApi:
         import webview
 
         fd = getattr(webview, "FileDialog", None)
-        code = getattr(fd, kind) if fd else {"OPEN": 10, "FOLDER": 20, "SAVE": 30}[kind]
-        r = self._window.create_file_dialog(code, allow_multiple=multiple, file_types=types)
+        legacy = {"OPEN": "OPEN_DIALOG", "FOLDER": "FOLDER_DIALOG", "SAVE": "SAVE_DIALOG"}[kind]
+        code = getattr(fd, kind, None) if fd is not None else None
+        if code is None:
+            code = getattr(webview, legacy, {"OPEN": 10, "FOLDER": 20, "SAVE": 30}[kind])
+        attempts = [dict(allow_multiple=multiple, file_types=types), dict(allow_multiple=multiple), {}]
+        last = None
+        for kw in attempts:
+            try:
+                r = self._window.create_file_dialog(code, **kw)
+                break
+            except Exception as e:
+                last = e
+                r = None
+        else:
+            log_line("file dialog failed: " + repr(last))
+            raise RuntimeError("Не вдалося відкрити вікно вибору файлів")
         if not r:
             return []
         return [str(x) for x in (r if isinstance(r, (list, tuple)) else [r])]
 
     def open_audio(self, multiple=True):
-        return self._dialog("OPEN", bool(multiple), ("Аудіо (*.wav;*.mp3;*.flac;*.ogg;*.m4a;*.aif;*.aiff)", "Усі файли (*.*)"))
+        return self._dialog("OPEN", bool(multiple), ("Аудіо (*.wav;*.mp3;*.flac;*.ogg;*.m4a;*.aif;*.aiff;*.opus)", "Усі файли (*.*)"))
+
+    def open_files(self, kind="audio", multiple=False):
+        types = {
+            "audio": ("Аудіо (*.wav;*.mp3;*.flac;*.ogg;*.m4a;*.aif;*.aiff;*.opus)", "Усі файли (*.*)"),
+            "image": ("Зображення (*.jpg;*.jpeg;*.png;*.webp)", "Усі файли (*.*)"),
+            "zip": ("Архів (*.zip)", "Усі файли (*.*)"),
+        }.get(kind, ("Усі файли (*.*)",))
+        return self._dialog("OPEN", bool(multiple), types)
 
     def open_folder(self):
         return self._dialog("FOLDER")

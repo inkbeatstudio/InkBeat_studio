@@ -36,15 +36,9 @@ async function uploadSamples(files) {
   if (j.added && j.added.length) toast(`Додано: ${j.added.map((a) => a.name).join(", ")}. Семпли доступні в семплері та драм-кіті будь-якого проєкту.`);
   return j.added || [];
 }
-function pickSamples() {
-  return new Promise((res) => {
-    const inp = document.createElement("input");
-    inp.type = "file";
-    inp.multiple = true;
-    inp.accept = "audio/*,.wav,.mp3,.flac,.ogg,.aif,.aiff,.m4a";
-    inp.onchange = async () => res(await uploadSamples(inp.files));
-    inp.click();
-  });
+async function pickSamples() {
+  const files = await pickLocal("audio", true);
+  return files.length ? uploadSamples(files) : [];
 }
 async function savePreset(kind, data, suggested) {
   const name = (prompt("Назва пресету:", suggested || "") || "").trim();

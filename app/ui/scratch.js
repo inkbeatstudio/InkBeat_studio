@@ -68,14 +68,8 @@ function addMidiTrack(kind) {
   if (typeof showDock === "function") showDock(true);
   toast(`Доріжку «${g.name}» додано. Малюйте ноти олівцем на вкладці «Ноти», звук — на вкладці «Інструмент».`);
 }
-function pickAudioFile() {
-  return new Promise((res) => {
-    const inp = document.createElement("input");
-    inp.type = "file";
-    inp.accept = "audio/*,.wav,.mp3,.flac,.ogg,.m4a,.aif,.aiff,.opus";
-    inp.onchange = () => res(inp.files[0] || null);
-    inp.click();
-  });
+async function pickAudioFile() {
+  return (await pickLocal("audio", false))[0] || null;
 }
 async function importAudioTrack(kind) {
   if (!S.pid) return;

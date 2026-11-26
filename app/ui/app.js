@@ -226,20 +226,43 @@ function renderFiles() {
 const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const drop = $("#drop");
 drop.addEventListener("click", (e) => {
-  if (e.target.closest("button")) return;
+  if (e.target.closest("button") || e.target.tagName === "INPUT") return;
   e.preventDefault();
+  if (DESK.on) return homePick(S.mode === "mix" ? "mix" : "files");
   (S.mode === "mix" ? $("#file-input") : $("#files-input")).click();
 });
 $("#pick-files").onclick = (e) => {
   e.preventDefault();
   e.stopPropagation();
+  if (DESK.on) return homePick("files");
   $("#files-input").click();
 };
 $("#pick-folder").onclick = (e) => {
   e.preventDefault();
   e.stopPropagation();
+  if (DESK.on) return homePick("folder");
   $("#folder-input").click();
 };
+async function homePick(kind) {
+  const p = await deskPaths(() => kind === "folder" ? DESK.api.open_folder() : DESK.api.open_audio(kind !== "mix"));
+  if (p === null) return $(kind === "folder" ? "#folder-input" : kind === "mix" ? "#file-input" : "#files-input").click();
+  if (!p.length) return;
+  let paths = p;
+  if (kind === "folder") {
+    const j = await api.get("/api/localdir?path=" + encodeURIComponent(p[0])).catch(() => ({ files: [] }));
+    paths = j.files || [];
+    if (!paths.length) return toast("У цій папці немає аудіофайлів.", true);
+    setMode("stems");
+  }
+  const files = [];
+  toast(paths.length > 1 ? `Додаю ${paths.length} файлів…` : "Додаю файл…");
+  for (const x of paths) {
+    const r = await fetch("/api/localfile?path=" + encodeURIComponent(x));
+    if (!r.ok) continue;
+    files.push(new File([await r.blob()], x.split(/[\\/]/).pop()));
+  }
+  addFiles(files);
+}
 for (const id of ["#file-input", "#files-input", "#folder-input"]) $(id).addEventListener("change", (e) => {
   addFiles(e.target.files);
   e.target.value = "";

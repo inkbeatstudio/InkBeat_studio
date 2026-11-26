@@ -209,7 +209,11 @@ function openAnalyzer() {
     <button class="btn primary sm wide" id="ana-master" data-hint="Автоматично налаштувати ефекти Master під обрану платформу">Мастеринг одним кліком…</button>`;
   $("#ana-x").onclick = openAnalyzer;
   $("#lu-reset").onclick = () => { ANA.blocks = []; ANA.peak = -120; };
-  $("#ref-load").onclick = () => $("#ref-file").click();
+  $("#ref-load").onclick = async () => {
+    if (!DESK.on) return $("#ref-file").click();
+    const f = (await pickLocal("audio", false))[0];
+    if (f) uploadRef(f);
+  };
   $("#ref-file").onchange = (e) => uploadRef(e.target.files[0]);
   $$("#ref-ab button").forEach((b) => b.onclick = () => setRef(b.dataset.ra === "ref"));
   $("#ref-match").onchange = (e) => { ANA.match = e.target.checked; setRef(ANA.refOn); };

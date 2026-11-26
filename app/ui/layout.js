@@ -155,8 +155,15 @@ async function openFromDisk(kind) {
     ($(kind === "mix" ? "#file-input" : "#files-input")).click();
     return;
   }
-  const paths = await DESK.api.open_audio(kind !== "mix");
-  if (!paths || !paths.length) return;
+  const paths = await deskPaths(() => DESK.api.open_audio(kind !== "mix"));
+  if (paths === null) {
+    show("home");
+    if (kind === "stems") setMode("stems");
+    else if (kind === "mix") setMode("mix");
+    ($(kind === "mix" ? "#file-input" : "#files-input")).click();
+    return;
+  }
+  if (!paths.length) return;
   try {
     if (kind === "batch" && paths.length > 1) {
       const j = await api.post("/api/analyze_path", { paths, batch: true, model: S.model });
@@ -175,8 +182,9 @@ async function openFromDisk(kind) {
 }
 function openFolderFromDisk() {
   if (!DESK.on) return openFromDisk("stems");
-  DESK.api.open_folder().then(async (p) => {
-    if (!p || !p.length) return;
+  deskPaths(() => DESK.api.open_folder()).then(async (p) => {
+    if (p === null) { show("home"); setMode("stems"); $("#folder-input").click(); return; }
+    if (!p.length) return;
     try {
       const j = await api.post("/api/analyze_path", { paths: [p[0]], mode: "stems", model: S.model, title: p[0].split(/[\\/]/).pop() });
       S.mode = "stems";
@@ -358,3 +366,50 @@ openProject = async function(pid) {
 };
 applyLook();
 applyLayout(UIP.layout, { silent: true });
+const PICK_ACCEPT = {
+  audio: "audio/*,.wav,.mp3,.flac,.ogg,.m4a,.aif,.aiff,.opus",
+  image: "image/*,.jpg,.jpeg,.png,.webp",
+  zip: ".zip"
+};
+function pickByInput(kind, multiple) {
+  return new Promise((res) => {
+    const inp = document.createElement("input");
+    inp.type = "file";
+    inp.accept = PICK_ACCEPT[kind] || "";
+    inp.multiple = !!multiple;
+    inp.style.display = "none";
+    document.body.appendChild(inp);
+    inp.onchange = () => { res([...inp.files]); inp.remove(); };
+    inp.click();
+  });
+}
+async function pickLocal(kind, multiple) {
+  if (DESK.on && DESK.api && DESK.api.open_files) {
+    let paths = null;
+    try {
+      paths = await DESK.api.open_files(kind, !!multiple);
+    } catch (e) {
+      paths = null;
+    }
+    if (paths) {
+      const out = [];
+      for (const p of paths) {
+        const r = await fetch("/api/localfile?path=" + encodeURIComponent(p));
+        if (!r.ok) { toast("Не вдалося прочитати файл: " + p, true); continue; }
+        const b = await r.blob();
+        out.push(new File([b], p.split(/[\\/]/).pop(), { type: b.type }));
+      }
+      return out;
+    }
+  }
+  return pickByInput(kind, multiple);
+}
+async function deskPaths(fn) {
+  if (!DESK.on || !DESK.api) return null;
+  try {
+    return await fn();
+  } catch (e) {
+    toast("Системне вікно вибору не відкрилося — пробую інший спосіб.", true);
+    return null;
+  }
+}

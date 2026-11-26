@@ -1219,11 +1219,7 @@ function vsBind() {
   vsUpdateDur();
 }
 function vsCoverUpload() {
-  const inp = document.createElement("input");
-  inp.type = "file";
-  inp.accept = "image/*,.jpg,.jpeg,.png,.webp";
-  inp.onchange = async () => {
-    const f = inp.files[0];
+  const run = async (f) => {
     if (!f) return;
     const fd = new FormData();
     fd.append("file", f, f.name);
@@ -1239,7 +1235,7 @@ function vsCoverUpload() {
       toast("Обкладинку не додано: " + e.message, true);
     }
   };
-  inp.click();
+  pickLocal("image", false).then((fs) => run(fs[0]));
 }
 function vsLoadCover() {
   return new Promise((res) => {
