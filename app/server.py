@@ -635,19 +635,56 @@ def project_video(pid):
     form = request.form
     tmpd = d / "cache" / "video_upload"
     tmpd.mkdir(parents=True, exist_ok=True)
-    suf = ".mp4" if "mp4" in (f.mimetype or "") or (f.filename or "").endswith(".mp4") else ".webm"
-    src = tmpd / (uuid.uuid4().hex[:8] + suf)
+    vc = form.get("vcodec", "")
+    suf = {"h264": ".h264", "ivf": ".ivf"}.get(vc) or (".mp4" if "mp4" in (f.mimetype or "") or (f.filename or "").endswith(".mp4") else ".webm")
+    tag = uuid.uuid4().hex[:8]
+    src = tmpd / (tag + suf)
     f.save(src)
+    af = None
+    if request.files.get("audio"):
+        af = tmpd / (tag + "_a.wav")
+        request.files["audio"].save(af)
     num = lambda k, dv=0.0: float(form.get(k) or dv)
 
     def fn(prog):
         try:
-            return VID.finish(pid, src, form.get("title") or "InkBeat", form.get("label") or "video", form.get("hq") == "1",
-                              num("audio_start"), num("lead"), num("duration"), int(num("fps", 30)), prog)
+            return VID.finish(pid, src, form.get("title") or "InkBeat", form.get("label") or "video", form.get("audio", "video"), af,
+                              num("audio_start"), num("lead"), num("duration"), int(num("fps", 30)),
+                              form.get("fade_in", "1") == "1", form.get("fade_out", "1") == "1", vc, prog)
         finally:
             src.unlink(missing_ok=True)
+            if af is not None:
+                af.unlink(missing_ok=True)
 
     return _job_thread(fn)
+
+
+@app.post("/api/project/<pid>/cover")
+def project_cover_upload(pid):
+    d = _pdir(pid)
+    f = request.files["file"]
+    tmp = d / "cache" / ("cover-" + uuid.uuid4().hex[:6])
+    f.save(tmp)
+    try:
+        return jsonify(VID.save_cover(Path(d).name, tmp))
+    except Exception:
+        return jsonify({"error": "Не вдалося відкрити зображення. Підійде JPG або PNG."}), 400
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+@app.get("/api/project/<pid>/cover")
+def project_cover_get(pid):
+    f = VID.cover_path(Path(_pdir(pid)).name)
+    if not f.exists():
+        abort(404)
+    return send_file(f, max_age=0)
+
+
+@app.delete("/api/project/<pid>/cover")
+def project_cover_del(pid):
+    VID.cover_path(Path(_pdir(pid)).name).unlink(missing_ok=True)
+    return jsonify({"ok": True})
 
 
 @app.get("/api/project/<pid>/video/file/<name>")

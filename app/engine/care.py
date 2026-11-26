@@ -15,7 +15,7 @@ from . import project as P
 from .jsonio import read_json, write_json
 
 ROOT = Path(__file__).resolve().parents[2]
-SKIP_DIRS = {".venv", "runtime", "__pycache__", ".git", "tests"}
+SKIP_DIRS = {".venv", "runtime", "__pycache__", ".git", ".github", "tests", "dist", "build"}
 
 
 def report(ui_errors: list, jobs: list, note: str = "") -> Path:
@@ -59,83 +59,16 @@ def report(ui_errors: list, jobs: list, note: str = "") -> Path:
     return dest
 
 
-def _fixname(info: zipfile.ZipInfo) -> str:
-    n = info.filename
-    if info.flag_bits & 0x800:
-        return n
-    try:
-        return n.encode("cp437").decode("utf-8")
-    except Exception:
-        return n
-
-
-def _extract(z: zipfile.ZipFile, dest: Path) -> list[str]:
-    names = []
-    for info in z.infolist():
-        n = _fixname(info).replace("\\", "/")
-        names.append(n)
-        if n.endswith("/") or ".." in Path(n).parts:
-            continue
-        out = dest / n
-        out.parent.mkdir(parents=True, exist_ok=True)
-        with z.open(info) as src, open(out, "wb") as dst:
-            shutil.copyfileobj(src, dst)
-    return names
-
-
 def _version_of(root: Path) -> str:
-    f = root / "app" / "engine" / "project.py"
-    m = re.search(r'VERSION\s*=\s*"([^"]+)"', f.read_text(encoding="utf-8")) if f.exists() else None
-    return m.group(1) if m else "?"
+    from .updater import version_of
+
+    return version_of(root)
 
 
 def update_from_zip(zpath: Path, progress=None) -> dict:
-    tmp = Path(P.workspace()) / "_uploads" / ("upd-" + uuid.uuid4().hex[:8])
-    tmp.mkdir(parents=True, exist_ok=True)
-    try:
-        with zipfile.ZipFile(zpath) as z:
-            names = [_fixname(i).replace("\\", "/") for i in z.infolist()]
-            runs = [n for n in names if n.endswith("run.py") and n.count("/") <= 1]
-            if not runs:
-                raise ValueError("Це не архів InkBeat: не знайдено run.py.")
-            prefix = runs[0][: -len("run.py")]
-            if prefix + "app/server.py" not in names:
-                raise ValueError("Архів неповний: немає app/server.py.")
-            _extract(z, tmp)
-        src = tmp / prefix if prefix else tmp
-        new_v, old_v = _version_of(src), _version_of(ROOT)
-        old_req = (ROOT / "requirements.txt").read_text(encoding="utf-8") if (ROOT / "requirements.txt").exists() else ""
-        new_req = (src / "requirements.txt").read_text(encoding="utf-8") if (src / "requirements.txt").exists() else ""
-        files = [f for f in src.rglob("*") if f.is_file() and not (set(f.relative_to(src).parts) & SKIP_DIRS)]
-        backup = ROOT / ".backup"
-        if backup.exists():
-            shutil.rmtree(backup, ignore_errors=True)
-        backup.mkdir()
-        for i, f in enumerate(files):
-            rel = f.relative_to(src)
-            dst = ROOT / rel
-            if dst.exists():
-                (backup / rel).parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(dst, backup / rel)
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(f, dst)
-            if progress and i % 20 == 0:
-                progress(0.1 + 0.6 * i / max(1, len(files)))
-        pip_log = ""
-        if new_req.strip() != old_req.strip():
-            if progress:
-                progress(0.75)
-            r = subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-r", str(ROOT / "requirements.txt")],
-                               capture_output=True, text=True, timeout=1800,
-                               creationflags=0x08000000 if sys.platform == "win32" else 0)
-            pip_log = (r.stdout or "")[-2000:] + (r.stderr or "")[-2000:]
-            if r.returncode != 0:
-                raise RuntimeError("Файли оновлено, але не вдалося доставити бібліотеки. Запустіть інсталятор InkBeat-Setup ще раз: він доставить потрібне, проєкти залишаться.\n" + pip_log[-600:])
-        if progress:
-            progress(1.0)
-        return {"old": old_v, "new": new_v, "files": len(files), "deps": bool(pip_log)}
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+    from .updater import apply_zip
+
+    return apply_zip(zpath, progress)
 
 
 def archive(pid: str, dest: Path, progress=None) -> Path:

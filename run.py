@@ -193,6 +193,14 @@ def warm_engine():
 def server_main(port):
     import logging
 
+    if "--no-update" not in sys.argv:
+        boot_stage(3, "Перевіряю оновлення…")
+        try:
+            from app.engine import updater
+
+            updater.startup(lambda text: boot_stage(5, text))
+        except Exception:
+            pass
     boot_stage(8, "Завантажую математичні модулі…")
     import numpy
     import scipy.signal

@@ -45,6 +45,11 @@ async function updClick(e) {
     if (UPD.last) await api.post("/api/update/prefs", { skip: UPD.last.latest }).catch(() => {});
   }
   if (k === "notes") openUpdates();
+  if (k === "whatsnew") {
+    updHide();
+    careModal(`Що нового у версії ${escapeHtml(UPD.last.latest)}`, `<div class="upd-notes" style="max-height:60vh">${updNotes(UPD.last.notes)}</div><div class="modal-actions"><button class="btn primary" id="upd-ok">Добре</button></div>`);
+    $("#upd-ok").onclick = () => { $("#care-modal").hidden = true; };
+  }
   if (k === "install") updInstall(true);
   if (k === "restart") DESK.api.restart();
 }
@@ -71,6 +76,13 @@ async function updAuto() {
   try {
     UPD.info = await api.get("/api/update/info");
     const p = UPD.info.prefs;
+    if (p.just_updated && p.just_updated.version) {
+      const j = p.just_updated;
+      UPD.last = { latest: j.version, notes: j.notes, current: j.version };
+      updCard(`<div class="upd-t">InkBeat оновлено до версії ${escapeHtml(j.version)}</div><div class="upd-s">Оновлення завантажилося з GitHub і встановилося під час запуску. Проєкти й налаштування на місці.</div><div class="upd-a"><button class="btn ghost" data-upd="hide">Добре</button><button class="btn primary" data-upd="whatsnew">Що нового</button></div>`);
+      api.post("/api/update/prefs", { just_updated: null }).catch(() => {});
+      return;
+    }
     if (!p.auto_check) return;
     const r = await api.post("/api/update/check", {});
     UPD.last = r;
@@ -108,9 +120,9 @@ async function openUpdates() {
   $("#care-body").innerHTML = `${state}
     ${r.latest ? `<div class="upd-notes"><div class="upd-nh">Що нового у версії ${escapeHtml(r.latest)}</div>${updNotes(r.notes)}</div>` : ""}
     <label class="upd-opt"><input type="checkbox" id="upd-ac" ${p.auto_check ? "checked" : ""}> <span><b>Перевіряти оновлення автоматично</b><br><span class="muted small">Під час кожного запуску програми.</span></span></label>
-    <label class="upd-opt"><input type="checkbox" id="upd-auto" ${p.auto_install ? "checked" : ""}> <span><b>Встановлювати оновлення самостійно</b><br><span class="muted small">Завантажується у фоні, коли немає розбору. Нова версія запрацює після перезапуску.</span></span></label>
+    <label class="upd-opt"><input type="checkbox" id="upd-auto" ${p.auto_install ? "checked" : ""}> <span><b>Встановлювати оновлення самостійно</b><br><span class="muted small">Нова версія завантажується з GitHub і встановлюється сама — під час запуску програми або у фоні, коли немає розбору.</span></span></label>
     <details class="upd-dev"><summary>Для розробника: звідки брати оновлення</summary>
-      <div class="muted small" style="margin:8px 0">Репозиторій GitHub у форматі <b>власник/назва</b>. Програма бере останній реліз і файл <b>InkBeat-update.zip</b> з нього.</div>
+      <div class="muted small" style="margin:8px 0">Репозиторій GitHub у форматі <b>власник/назва</b>. Програма бере найновіше: реліз із файлом <b>InkBeat-update.zip</b> або просто код з гілки <b>main</b>, якщо номер версії в ньому більший.</div>
       <div style="display:flex;gap:8px"><input id="upd-repo" type="text" class="inp" style="flex:1" value="${escapeHtml(info.repo)}"><button class="btn ghost" id="upd-repo-save">Зберегти</button></div></details>
     <div class="modal-actions"><a class="btn ghost" href="#" id="upd-page">Сторінка релізів</a>${UPD.installed ? updRestartBtn() : r.available ? '<button class="btn primary" data-upd="install">Оновити зараз</button>' : '<button class="btn primary" id="upd-again">Перевірити ще раз</button>'}</div>`;
   const body = $("#care-body");

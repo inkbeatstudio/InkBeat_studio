@@ -12,3 +12,4 @@ pywebview[qt]>=5.0; sys_platform == "linux"
 pedalboard>=0.9
 certifi
 imageio-ffmpeg>=0.5
+pillow>=9
