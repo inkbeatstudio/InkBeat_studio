@@ -15,7 +15,7 @@ from . import cleanup, drums, harmony, midi_export, rhythm, samples, separation,
 from .jsonio import read_json, write_json
 from .transcribe import Note, Transcriber
 
-VERSION = "2.3.3"
+VERSION = "2.4.0"
 ANALYSIS_SR = 22050
 
 GRIDS = {"off": 0, "1/4": 1.0, "1/8": 0.5, "1/16": 0.25, "1/32": 0.125, "1/8T": 1 / 3, "1/16T": 1 / 6}
@@ -136,7 +136,7 @@ STAGES = [
     ("harmony", "Тональність і акорди", 0.05, 0.08),
     ("structure", "Структура пісні", 0.04, 0.06),
     ("transcribe", "Переведення доріжок у ноти", 0.31, 0.63),
-    ("kit", "Семпли і звук для FL Studio", 0.04, 0.08),
+    ("kit", "Семпли й звуковий гід", 0.04, 0.08),
     ("build", "Збирання MIDI-проєкту", 0.03, 0.06),
 ]
 
@@ -900,11 +900,13 @@ def export(pid: str, options: dict | None = None) -> dict:
         pass
     from .guide_html import render as render_guide
 
-    (out / "Звуковий гід FL Studio.html").write_text(render_guide(p, b, kit, enabled, files), encoding="utf-8")
+    (out / "Звуковий гід.html").write_text(render_guide(p, b, kit, enabled, files), encoding="utf-8")
 
     fl_src = Path(__file__).resolve().parent.parent.parent / "fl_scripts"
+    extra = out / "Extras" / "FL Studio"
     for f in fl_src.glob("*.pyscript"):
-        shutil.copy(f, out / f.name)
+        extra.mkdir(parents=True, exist_ok=True)
+        shutil.copy(f, extra / f.name)
     info = {"title": p["title"], "bpm": tm["bpm"], "time_signature": f"{tm['bpb']}/4", "key": b["key"]["name"],
             "lead_in_seconds": round(tm["pad"], 4),
             "sections": [{"name": s_["name"], "bar": int(round(s_["start"] / tm["bpb"])) + 1} for s_ in b["sections"]],
@@ -913,7 +915,7 @@ def export(pid: str, options: dict | None = None) -> dict:
             "tracks": [{"name": t["name"], "notes": len(t["notes"]), "file": f}
                        for t, f in zip(enabled, files)]}
     write_json(out / "song_info.json", info)
-    (out / "ЯК ІМПОРТУВАТИ У FL STUDIO.txt").write_text(_guide(p, b, tm, enabled), encoding="utf-8")
+    (out / "ЯК ВІДКРИТИ В ІНШИХ ПРОГРАМАХ.txt").write_text(_guide(p, b, tm, enabled), encoding="utf-8")
     return {"path": str(out), "files": sorted(str(x.relative_to(out)) for x in out.rglob("*") if x.is_file())}
 
 
@@ -921,13 +923,13 @@ def _guide(p, b, tm, enabled) -> str:
     bars_pad = tm["pad"] / tm["bar_len"]
     chords_line = "  ".join(f"{c['label']}" for c in b["chords"] if c["label"] != "N")[:600]
     tracks_txt = "\n".join(f"   {i + 1:02d}. {t['name']:<22} {len(t['notes']):>5} нот"
-                           + ("   (FPC / будь-який драм-кіт — розкладка General MIDI)" if t["is_drums"] else "")
+                           + ("   (будь-яка драм-машина — розкладка General MIDI)" if t["is_drums"] else "")
                            for i, t in enumerate(enabled))
     secs = "\n".join(f"   Такт {int(round(s['start'] / tm['bpb'])) + 1:>3}: {s['name_ua']}" for s in b["sections"])
-    return f"""INKBEAT → FL STUDIO
+    name = slugify(p["title"])
+    return f"""INKBEAT — ПРОЄКТ «{p['title']}»
 ========================================
-Пісня:        {p['title']}
-Темп:         {tm['bpm']:.2f} BPM   (у FL: клацніть на темп угорі й введіть це число)
+Темп:         {tm['bpm']:.2f} BPM
 Розмір:       {tm['bpb']}/4
 Тональність:  {b['key']['name']}
 Вступ-зсув:   {tm['pad']:.3f} с ({bars_pad:.2f} такту) — щоб перша сильна доля пісні стала точно на початок такту.
@@ -942,44 +944,60 @@ def _guide(p, b, tm, enabled) -> str:
    {chords_line}
 
 ----------------------------------------
-ШВИДКИЙ СПОСІБ (усе одразу)
-1. FL Studio → File → Import → MIDI file… → оберіть «{slugify(p['title'])} - all tracks.mid».
-2. У вікні імпорту увімкніть «Start new project» (новий проєкт) — FL візьме темп із файлу
-   і створить окремий канал на кожну доріжку (вокал, бас, клавішні, барабани, акорди…).
-3. Кожен канал — це звичайні ноти в Piano roll: міняйте інструмент на свій
-   (FLEX, Sytrus, Vital, Serum, FPC для барабанів тощо), редагуйте ноти як завгодно.
+ЩО В ЦІЙ ПАПЦІ
+• «{name} - mix.mp3» і «{name} - mix.wav» — готова пісня з усіма ефектами (якщо вмикали «Готовий мікс»).
+• «Rendered (InkBeat edits)» — кожна доріжка з вашими змінами й ефектами у WAV.
+• «Stems (aligned)» — оригінальні розділені доріжки у WAV.
+• «{name} - all tracks.mid» — усі партії нотами; окремі партії — у папці «MIDI».
+• «Samples» — барабани, окремі ноти, вокальні фрази й лупи в темпі.
+• «Звуковий гід.html» — які інструменти й ефекти поставити на кожну доріжку.
+• «song_info.json» — темп, тональність, структура й акорди в машинному вигляді.
 
-ТОЧНИЙ СПОСІБ (кожна доріжка окремо)
-1. Встановіть темп {tm['bpm']:.2f} BPM.
-2. Додайте інструмент у Channel rack → відкрийте його Piano roll →
-   меню Piano roll (стрілка зліва вгорі) → File → Import MIDI file… → файл з папки MIDI.
-3. Для барабанів: додайте FPC і імпортуйте «Drums.mid» — ноти вже в розкладці General MIDI
-   (36 бочка, 38 малий, 42 закритий хет, 46 відкритий, 49 тарілка). Якщо барабани у вас на
-   окремих семплах — беріть файли з папки «… - split» (бочка, малий, хети окремо).
+Усі WAV починаються з однієї точки й вирівняні з MIDI: у будь-якій програмі ставте їх
+на самий початок проєкту (такт 1) — і все збіжиться.
 
-ОРИГІНАЛЬНИЙ ЗВУК (для порівняння або щоб залишити вокал)
-• Папка «Stems (aligned)» — розділені доріжки у WAV, уже вирівняні під сітку.
-  Перетягніть їх у Playlist на самий початок (такт 1) — вони збігатимуться з MIDI.
-• «Reference mix (aligned).wav» — увесь мікс для звірки на слух.
+----------------------------------------
+ЯК ВІДКРИТИ В РІЗНИХ ПРОГРАМАХ
 
-ЗВУК, ЕФЕКТИ І СЕМПЛИ (стандартні плагіни FL Studio)
-• «Звуковий гід FL Studio.html» — відкрийте в браузері: для кожної доріжки який плагін FL взяти
-  (FPC, FLEX, FL Keys, BooBass, Sytrus…), яку категорію пресета, які ефекти на інсерт мікшера
-  (Parametric EQ 2, Compressor, Reeverb 2, Delay 3, Stereo Shaper…) і з якими налаштуваннями,
-  плюс план мікшера з шинами Reverb/Delay і ланцюжок на Master.
-• Samples/Drums — бочка, малий, хети, тарілки, вирізані з вашої пісні → на пади FPC
-  (номер пада вказано в гіді; розкладка збігається з MIDI барабанів).
-• Samples/One-shots — окремі ноти й акорди з пісні. Перетягніть у Channel rack (створиться Sampler),
-  у Channel settings правий клік на клавіші root-ноти з назви файлу — і MIDI заграє цим звуком.
-• Samples/Vocal chops — фрази вокалу для чопів.
-• Samples/Loops — лупи по 4 такти кожної доріжки, точно в темпі: перетягніть у Playlist.
+Будь-яка програма (загальний спосіб)
+  1. Створіть новий проєкт і встановіть темп {tm['bpm']:.2f} BPM.
+  2. Перетягніть «{name} - all tracks.mid» у вікно — з'являться MIDI-доріжки з нотами.
+  3. Перетягніть потрібні WAV із «Rendered (InkBeat edits)» або «Stems (aligned)» на початок.
+  4. Призначте MIDI-доріжкам свої інструменти.
 
-ДОПОМІЖНИЙ СКРИПТ ДЛЯ PIANO ROLL
-«InkBeat Cleanup.pyscript» скопіюйте у:
-   Документи\\Image-Line\\FL Studio\\Settings\\Piano roll scripts
-Потім у Piano roll: Tools → Scripting → InkBeat Cleanup. Він квантує, прибирає дрібні
-й тихі ноти, підтягує ноти до тональності та вирівнює гучність — з ручками-налаштуваннями.
+FL Studio
+  File → Import → MIDI file… → «{name} - all tracks.mid», галочка «Start new project» —
+  темп виставиться сам. WAV перетягніть у Playlist на такт 1.
+  Барабани: FPC, ноти вже в розкладці General MIDI.
+  Додатково: скрипт для Piano roll у «Extras/FL Studio» — скопіюйте його в
+  Документи\\Image-Line\\FL Studio\\Settings\\Piano roll scripts.
+
+Ableton Live
+  Перетягніть MIDI-файл у Arrangement View — Live запропонує взяти темп із файлу.
+  WAV перетягніть на нові аудіодоріжки на початок. Вимкніть Warp для стемів, якщо темп збігається.
+
+Logic Pro / GarageBand (Mac)
+  File → Import → MIDI File… (або перетягніть файл) — Logic спитає, чи взяти темп із файлу: так.
+  WAV перетягніть на аудіодоріжки на такт 1.
+
+Cubase / Nuendo
+  File → Import → MIDI File… → «Import tempo track». WAV — File → Import → Audio File.
+
+Studio One
+  Перетягніть MIDI-файл у Song — темп підхопиться. WAV перетягніть на початок.
+
+Reaper
+  Insert → Media file… → MIDI-файл (галочка «Import tempo map»). WAV перетягніть на початок.
+
+Bitwig Studio / LMMS / інші
+  Імпорт MIDI та аудіо — через перетягування або меню «Файл → Імпорт». Темп: {tm['bpm']:.2f} BPM.
+
+----------------------------------------
+БАРАБАНИ
+Ноти барабанів — у розкладці General MIDI (36 бочка, 38 малий, 42 закритий хет, 46 відкритий,
+49 тарілка), тож працюють з будь-якою драм-машиною. Якщо барабани у вас на окремих семплах —
+беріть файли з папки «… - split» (бочка, малий, хети окремо) і семпли з «Samples/Drums».
 
 Порада: вокал перетворюється на мелодію (ноти), а не на голос із текстом. Щоб співати по-новому,
-залиште вокальний стем як аудіо, або дайте мелодію своєму синту/вокалісту.
+залиште вокальний стем як аудіо, або дайте мелодію своєму синту чи вокалісту.
 """

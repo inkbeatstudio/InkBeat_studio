@@ -50,11 +50,11 @@ def render(p: dict, b: dict, kit: dict, enabled: list, files: list) -> str:
         smp = "".join(
             f"<div class=smp><audio controls preload=none src='Samples/{e(sm['file'])}'></audio><span>{e(sm['name'])}"
             + (f" · root <b>{e(sm['root_name'])}</b>" if sm.get("root_name") else "")
-            + (f" · пад FPC {sm['fpc_pad']}" if sm.get("fpc_pad") else "") + "</span></div>" for sm in k.get("samples", []))
+            + (f" · пад {sm['fpc_pad']}" if sm.get("fpc_pad") else "") + "</span></div>" for sm in k.get("samples", []))
         chars = "".join(f"<span class=chip>{e(c)}</span>" for c in rec.get("character", []))
         cards.append(f"""<div class=card style="border-left-color:{t['color']}">
 <h3>{k['insert']}. {e(t['name'])}</h3>{chars}
-<div class=grid><div><div class=lbl>Інструмент у FL</div><div class=inst><b>{e(inst.get('plugin', '—'))}</b> — {e(inst.get('preset', ''))}
+<div class=grid><div><div class=lbl>Рекомендований інструмент</div><div class=inst><b>{e(inst.get('plugin', '—'))}</b> — {e(inst.get('preset', ''))}
 <div class=note>Альтернатива: {e(inst.get('alt', '—'))}</div><p class=note>{e(inst.get('how', ''))}</p></div>
 {('<div class=lbl>MIDI</div><code>MIDI/' + e(midi.split('/')[-1]) + '</code>') if midi else ''}
 {('<div class=lbl style="margin-top:14px">Семпли з пісні</div>' + smp) if smp else ''}</div>
@@ -65,7 +65,7 @@ def render(p: dict, b: dict, kit: dict, enabled: list, files: list) -> str:
     master = "".join(f"<div class=fx><b>{e(c['plugin'])}</b><ul>{''.join('<li>' + e(s) + '</li>' for s in c['settings'])}</ul></div>"
                      for c in kit["master"])
     secs = " → ".join(e(s["name_ua"]) for s in b["sections"])
-    return f"""<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8"><title>{e(p['title'])} — звуковий гід FL Studio</title>
+    return f"""<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8"><title>{e(p['title'])} — звуковий гід</title>
 <style>{CSS}</style></head><body><main>
 <div class=sub>INKBEAT · звуковий гід</div><h1>{e(p['title'])}</h1>
 <div class=ro><div><span>BPM</span><b>{tm['bpm']:.2f}</b></div><div><span>Тональність</span><b>{e(b['key']['name'])}</b></div>
@@ -74,14 +74,14 @@ def render(p: dict, b: dict, kit: dict, enabled: list, files: list) -> str:
 
 <h2>Збірка проєкту за 10 хвилин</h2>
 <ol class=steps>
-<li>FL Studio → <b>File → Import → MIDI file</b> → <code>{e(slug_all(p))}</code>, галочка <b>Start new project</b>. Темп виставиться сам.</li>
-<li>У Channel rack кожна доріжка — окремий канал. Замініть генератор на рекомендований нижче (правий клік на канал → <b>Replace</b>) і виберіть пресет потрібної категорії в браузері пресетів плагіна.</li>
-<li>Барабани: канал <b>FPC</b> → перетягніть семпли з <code>Samples/Drums</code> на пади (номери падів указано біля семплів). Звучатиме як в оригіналі.</li>
-<li>Для звуку «як у пісні» на мелодичних доріжках: перетягніть one-shot із <code>Samples/One-shots</code> у Channel rack (створиться Sampler), у його Channel settings клацніть правою кнопкою на клавіатурі по ноті <b>root</b> — і MIDI заграє цим звуком.</li>
-<li>Мікшер: у кожному каналі задайте номер інсерта (поле «FX» у Channel settings) за таблицею, додайте ефекти з карток. Шини Reverb/Delay — через Send.</li>
-<li>Оригінальні доріжки з <code>Stems (aligned)</code> і лупи з <code>Samples/Loops</code> кладіть у Playlist — вони точно в темпі й у сітці.</li>
+<li>У своїй музичній програмі імпортуйте <code>{e(slug_all(p))}</code> як новий проєкт (у більшості програм — меню «Файл → Імпорт» або просто перетягнути файл у вікно). Темп запишеться з файлу.</li>
+<li>Кожна доріжка — окремий інструмент. Поставте на неї рекомендований нижче інструмент або схожий за типом зі своєї бібліотеки.</li>
+<li>Барабани: завантажте семпли з <code>Samples/Drums</code> у драм-машину чи семплер — розкладка нот General MIDI (36 бочка, 38 малий, 42 хет). Звучатиме як в оригіналі.</li>
+<li>Для звуку «як у пісні» на мелодичних доріжках: завантажте one-shot із <code>Samples/One-shots</code> у семплер і вкажіть кореневу ноту з назви файлу — MIDI заграє цим звуком.</li>
+<li>Мікшер: розставте доріжки за таблицею, додайте ефекти з карток. Шини Reverb/Delay — через посили (Send).</li>
+<li>Оригінальні доріжки з <code>Stems (aligned)</code> і лупи з <code>Samples/Loops</code> ставте на самий початок — вони точно в темпі й у сітці.</li>
 </ol>
-<p class=note>Усі плагіни нижче є в будь-якій редакції FL Studio (Sytrus — від Producer Edition). Налаштування — стартові точки, підібрані за аналізом оригіналу: доводьте на слух, порівнюючи з <code>Reference mix (aligned).wav</code>.</p>
+<p class=note>Назви плагінів нижче — стандартні плагіни FL Studio, наведені як орієнтир. В Ableton, Logic, Cubase, Reaper та інших програмах беріть аналоги того ж типу: синт-бас, електропіаніно, параметричний еквалайзер, компресор, ревербератор. Налаштування — стартові точки, підібрані за аналізом оригіналу: доводьте на слух, порівнюючи з <code>Reference mix (aligned).wav</code>.</p>
 
 <h2>План мікшера</h2>
 <table><tr><th>Інсерт</th><th>Доріжка</th><th>Інструмент</th><th>MIDI-файл</th></tr>{''.join(rows)}{bus_rows}

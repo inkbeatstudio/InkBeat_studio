@@ -430,7 +430,7 @@ async function renderVersion(key, progress) {
           prog(`Версія: ${VERSIONS[k][0]}…`, 0.7 + 0.25 * i / sel.length);
           await renderVersion(k);
         }
-        prog("Записую MIDI, стеми, семпли і гід…", 0.97);
+        prog("Записую пісню, доріжки, MIDI і семпли…", 0.97);
         const r = await api.post(`/api/project/${S.pid}/export`, { use_render: true, mixdown: $("#ex-mix").checked, edited: $("#ex-midi").checked ? editedMidi() : null });
         showExportDone(r);
       } catch (err) {

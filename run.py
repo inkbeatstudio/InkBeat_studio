@@ -420,7 +420,7 @@ def main():
     port = free_port()
     url = f"http://127.0.0.1:{port}/"
     print("=" * 60)
-    print("  INKBEAT — Song → FL Studio")
+    print("  INKBEAT — music studio")
     print(f"  Інтерфейс: {url}")
     print("  Не закривайте це вікно, поки працюєте з програмою.")
     print("=" * 60)

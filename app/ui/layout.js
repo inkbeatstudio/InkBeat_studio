@@ -218,7 +218,7 @@ const MENUS = {
     ["Пакетна обробка: кілька пісень…", () => DESK.on ? openFromDisk("batch") : (show("home"), toast("Виберіть кілька пісень і поставте галочку «Це різні пісні»."))],
     null,
     ["Проєкти", () => show("projects")],
-    ["Експорт у FL Studio…", needProject(() => $("#export-btn").click())],
+    ["Експорт…", needProject(() => $("#export-btn").click())],
     ["Зберегти знімок / Історія…", needProject(openHistory)],
     ["Бібліотека семплів і пресетів…", () => openLibrary()],
     null,
@@ -346,7 +346,7 @@ async function openAbout() {
   const modal = $("#look-modal");
   $("#look-modal h3").textContent = "Про InkBeat";
   $("#look-body").innerHTML = `<div class="about"><svg viewBox="0 0 32 32" width="56" height="56"><rect width="32" height="32" rx="7" fill="#1b1e26"/><g fill="var(--amber)"><rect x="6" y="12" width="3" height="8" rx="1.5"/><rect x="11" y="7" width="3" height="18" rx="1.5"/><rect x="16" y="10" width="3" height="12" rx="1.5"/></g><g fill="#4fd1c5"><rect x="21" y="9" width="6" height="3" rx="1"/><rect x="21" y="15" width="4" height="3" rx="1"/><rect x="21" y="21" width="6" height="3" rx="1"/></g></svg>
-    <div><h4>InkBeat ${escapeHtml(sys.version || "")}</h4><p class="muted">Пісня → редаговані доріжки й MIDI для FL Studio. Вокальна студія, зведення, мастеринг.</p>
+    <div><h4>InkBeat ${escapeHtml(sys.version || "")}</h4><p class="muted">Музична студія: розбір пісні на доріжки й MIDI, редагування, вокальна студія, зведення, мастеринг і відео.</p>
     <p class="muted small">Обчислення: ${sys.device === "cuda" ? "відеокарта " + escapeHtml(sys.gpu || "") : sys.device === "mps" ? "відеокарта Apple" : "процесор"} · Python ${escapeHtml(sys.python || "")} · ${DESK.on ? "застосунок" : "вікно браузера"}</p>
     <p class="muted small">Проєкти: ${escapeHtml(sys.workspace || "")}</p><p class="muted small">Ліцензії сторонніх компонентів — у файлі THIRD_PARTY_NOTICES.txt у папці програми.</p></div></div>`;
   modal.hidden = false;

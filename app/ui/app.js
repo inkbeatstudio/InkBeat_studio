@@ -831,7 +831,7 @@ async function renderSound() {
   };
   const live = new Set(S.B.tracks.map((x) => x.id));
   const tracks = kit.tracks.filter((x) => live.has(x.id)).sort((a, b) => (b.id === S.sel) - (a.id === S.sel));
-  box.innerHTML = `<p class="muted small">Рекомендації зі стандартних плагінів FL Studio, підібрані за аналізом оригіналу, і семпли, вирізані з цієї пісні. Усе це також потрапляє в експорт (папка Samples + «Звуковий гід FL Studio.html»).</p>
+  box.innerHTML = `<p class="muted small">Рекомендації інструментів і ефектів, підібрані за аналізом оригіналу (назви плагінів наведено для FL Studio — в інших програмах беріть схожі за типом), і семпли, вирізані з цієї пісні. Усе це також потрапляє в експорт (папка Samples + «Звуковий гід FL Studio.html»).</p>
     <button class="btn ghost wide" id="open-guide" style="margin-bottom:12px">Відкрити повний звуковий гід</button>` + tracks.map((t) => card(t.name, t.color, t.insert, t.rec, t.samples, t.id)).join("") + (live.has("_chords") ? card("Chords (harmony)", "#eab308", kit.chords.insert, kit.chords.rec, [], "_chords") : "") + kit.buses.map((b) => `<div class="snd-card" style="border-left-color:#4fd1c5"><h4>Шина ${escapeHtml(b.name)}<span>інсерт ${b.insert}</span></h4>${b.chain.map(fx).join("")}</div>`).join("") + `<div class="snd-card" style="border-left-color:#4fd1c5"><h4>Master</h4>${kit.master.map(fx).join("")}</div>`;
   $("#open-guide").onclick = () => window.open(`/api/project/${S.pid}/guide`, "_blank");
   $$(".smp-btn", box).forEach((b) => b.onclick = () => playSample(b.dataset.f, b));

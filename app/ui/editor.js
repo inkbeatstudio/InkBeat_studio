@@ -146,7 +146,7 @@ function renderHeads() {
     const sub = (t.gen ? (t.user ? "MIDI · " : "згенеровано · ") : t.id === "_chords" ? "з акордів пісні · " : "") + (t.is_drums ? `${nn} ударів` : `${nn} нот`) + (mt(t.id).notes && !t.gen ? " · змінено" : "");
     h.innerHTML = `<span class="cbar" style="background:${t.color}"></span>
       <canvas class="lh-meter" width="6" height="60"></canvas>
-      <div class="lh-top"><span class="lh-name" data-hint="${t.id === "_chords" ? "Доріжка з акордами пісні, розкладеними на ноти — готова гармонія для FL Studio. Вимкнути: меню ⋯ → «Видалити доріжку» або галочка «Доріжка акордів» у панелі «Проєкт»." : escapeHtml(t.name)}">${t.clone ? "⧉ " : ""}${escapeHtml(t.name)}</span>
+      <div class="lh-top"><span class="lh-name" data-hint="${t.id === "_chords" ? "Доріжка з акордами пісні, розкладеними на ноти — готова гармонія для паду чи піаніно. Вимкнути: меню ⋯ → «Видалити доріжку» або галочка «Доріжка акордів» у панелі «Проєкт»." : escapeHtml(t.name)}">${t.clone ? "⧉ " : ""}${escapeHtml(t.name)}</span>
         <button class="lh-more" data-hint="Меню доріжки: дублювати, видалити, перейменувати, скинути кліпи">⋯</button></div>
       <div class="lh-sub">${sub}${fxn ? ` · ${fxn} FX` : ""}${ver}</div>
       <div class="lh-btns">
@@ -154,7 +154,7 @@ function renderHeads() {
         <button class="lh-btn s ${m.solo ? "on" : ""}" data-hint="S — соло: чути лише цю доріжку (можна кілька)">S</button>
         ${t.has_audio ? `<button class="lh-btn src ${src}" data-hint="Що звучить: ОРИГ — запис зі стему; MIDI — ноти через вибраний інструмент; РАЗОМ — обидва">${srcLabel}</button>` : ""}
         <button class="lh-btn au ${S.autoView && S.autoView[t.id] ? "on" : ""}" data-hint="A — лінія автоматизації: гучність, панорама або фільтр змінюються з часом">A</button>
-        <button class="lh-btn ex ${t.enabled ? "on" : ""}" data-hint="Чи експортувати MIDI цієї доріжки у FL Studio">${t.enabled ? "✓ MIDI" : "MIDI"}</button>
+        <button class="lh-btn ex ${t.enabled ? "on" : ""}" data-hint="Чи включати MIDI цієї доріжки в експорт">${t.enabled ? "✓ MIDI" : "MIDI"}</button>
       </div>`;
     h.addEventListener("click", (e) => {
       const b = e.target.closest("button");
@@ -244,7 +244,7 @@ async function removeTrack(t) {
   const chords = t.id === "_chords";
   const copies = (S.mix.clones || []).filter((c) => c.of === t.id).length;
   const ok = await inkConfirm(`Видалити «${t.name}»?`,
-    chords ? "<p>Це автоматична доріжка акордів — програма створила її з гармонії пісні. Вона зникне з редактора та з експорту у FL Studio.</p><p class=\"muted\">Увімкнути її знову можна галочкою «Доріжка акордів» у панелі «Проєкт → Гармонія».</p>"
+    chords ? "<p>Це автоматична доріжка акордів — програма створила її з гармонії пісні. Вона зникне з редактора та з експорту.</p><p class=\"muted\">Увімкнути її знову можна галочкою «Доріжка акордів» у панелі «Проєкт → Гармонія».</p>"
       : `<p>Доріжка зникне з редактора, мікшера й експорту (MIDI, стеми, мікс).${copies ? ` Разом з нею сховаються й ${copies} її копії.` : ""}</p><p class="muted">Файли не стираються: повернути доріжку з усіма ефектами можна через «Правка → Видалені доріжки…».</p>`,
     "Видалити", true);
   if (!ok) return;
@@ -1990,9 +1990,9 @@ function editedMidi() {
 $("#export-btn").addEventListener("click", () => {
   const modal = $("#export-modal");
   const edits = hasEdits();
-  $("#ex-title").textContent = "Експорт у FL Studio";
+  $("#ex-title").textContent = "Експорт";
   $("#ex-body").innerHTML = `
-    <p>Буде створено папку з MIDI, стемами, семплами, звуковим гідом і інструкцією.</p>
+    <p>Буде створено папку проєкту: готова пісня, окремі доріжки у WAV, MIDI, семпли й інструкція. Ці файли — стандартні формати, тож проєкт можна продовжити в будь-якій музичній програмі.</p>
     <label class="ex-opt"><input type="checkbox" id="ex-render" ${edits ? "checked" : ""}> <span><b>Записати мої зміни у WAV</b> — ефекти, обробку (автотюн, шумоподавлення…), різання й переміщення кліпів, інструменти. Кожна доріжка окремо + повний мікс з Master. ${edits ? "" : "<span class='muted'>(змін поки немає)</span>"}</span></label>
     <label class="ex-opt"><input type="checkbox" id="ex-midi" ${edits ? "checked" : ""}> <span><b>MIDI мого аранжування</b> — ноти з урахуванням вирізаних, переміщених і продубльованих кліпів.</span></label>
     <label class="ex-opt"><input type="checkbox" id="ex-mix" checked> <span><b>Готовий мікс у MP3 (320 кбіт/с) і WAV</b> — один файл усієї пісні з ефектами й Master, щоб одразу викласти чи надіслати.</span></label>
@@ -2009,7 +2009,7 @@ $("#export-btn").addEventListener("click", () => {
     };
     try {
       if (doRender) await renderAll(prog);
-      prog("Записую MIDI, стеми, семпли і гід…", 0.97);
+      prog("Записую пісню, доріжки, MIDI і семпли…", 0.97);
       const r = await api.post(`/api/project/${S.pid}/export`, { use_render: doRender, mixdown: doMix, edited: doMidi ? editedMidi() : null });
       showExportDone(r);
     } catch (e) {
@@ -2021,15 +2021,18 @@ $("#export-btn").addEventListener("click", () => {
 function showExportDone(r) {
   const tm = S.B.timing, mid = r.files.find((f) => f.endsWith("all tracks.mid")) || "";
   const rendered = r.files.some((f) => f.startsWith("Rendered"));
-  $("#ex-title").textContent = "Готово до FL Studio";
+  const hasMix = r.files.some((f) => f.endsWith(" - mix.mp3"));
+  const daws = ["FL Studio", "Ableton Live", "Logic Pro", "GarageBand", "Cubase", "Studio One", "Reaper", "Bitwig", "LMMS"];
+  $("#ex-title").textContent = "Експорт готовий";
   $("#ex-body").innerHTML = `<div class="ex-path">${escapeHtml(r.path)}</div>
-    <div class="ex-actions"><button class="btn primary" id="ex-open">Відкрити папку</button><a class="btn ghost" href="/api/project/${S.pid}/midi" download>Завантажити MIDI</a><a class="btn ghost" href="/api/project/${S.pid}/guide" target="_blank">Звуковий гід</a>${r.files.some((f) => f.endsWith(" - mix.mp3")) ? `<a class="btn ghost" href="/api/project/${S.pid}/mixdown/mp3" download>Мікс MP3 ⤓</a><a class="btn ghost" href="/api/project/${S.pid}/mixdown/wav" download>Мікс WAV ⤓</a>` : ""}</div>
+    <div class="ex-actions"><button class="btn primary" id="ex-open">Відкрити папку</button>${hasMix ? `<a class="btn ghost" href="/api/project/${S.pid}/mixdown/mp3" download data-hint="Готова пісня одним файлом MP3 320 кбіт/с — щоб надіслати чи викласти">Пісня MP3 ⤓</a><a class="btn ghost" href="/api/project/${S.pid}/mixdown/wav" download data-hint="Готова пісня без втрати якості — для стрімінгових сервісів і дистриб'юторів">Пісня WAV ⤓</a>` : ""}<a class="btn ghost" href="/api/project/${S.pid}/midi" download data-hint="Усі партії нотами в одному MIDI-файлі">MIDI ⤓</a><a class="btn ghost" href="/api/project/${S.pid}/guide" target="_blank" data-hint="Поради, якими інструментами й ефектами відтворити звук кожної доріжки">Звуковий гід</a></div>
     <ol class="steps">
-      <li><b>File → Import → MIDI file…</b><p>${r.files.some((f) => f.includes("edited arrangement")) ? "Ваше аранжування: <span class='kbd'>… - edited arrangement.mid</span>. Оригінал: " : ""}<span class="kbd">${escapeHtml(mid)}</span>, галочка «Start new project». Темп ${tm.bpm.toFixed(2)} BPM виставиться сам.</p></li>
-      ${rendered ? `<li><b>Ваші оброблені доріжки</b><p>Папка <span class="kbd">Rendered (InkBeat edits)</span>: кожна доріжка з ефектами й обробкою + <span class="kbd">00 Full mix</span>. Перетягніть у Playlist на такт 1 — вони вирівняні з MIDI.</p></li>` : ""}
-      <li><b>Оригінальні стеми й семпли</b><p><span class="kbd">Stems (aligned)</span> — розділені доріжки без змін; <span class="kbd">Samples</span> — удари для FPC, one-shots, вокальні чопи, лупи.</p></li>
-      <li><b>Звук у FL</b><p>«Звуковий гід FL Studio.html» — які плагіни й ефекти FL поставити на кожну доріжку.</p></li>
+      ${hasMix ? `<li><b>Готова пісня</b><p><span class="kbd">… - mix.mp3</span> і <span class="kbd">… - mix.wav</span> — увесь трек з ефектами й Master. Можна одразу слухати, надсилати й публікувати.</p></li>` : ""}
+      <li><b>Окремі доріжки</b><p>${rendered ? `<span class="kbd">Rendered (InkBeat edits)</span> — кожна доріжка з вашими ефектами й обробкою. ` : ""}<span class="kbd">Stems (aligned)</span> — оригінальні розділені доріжки. Усі WAV починаються з однієї точки, тож у будь-якій програмі просто поставте їх на початок — вони збіжуться між собою й з MIDI.</p></li>
+      <li><b>Ноти (MIDI)</b><p>${r.files.some((f) => f.includes("edited arrangement")) ? "Ваше аранжування: <span class='kbd'>… - edited arrangement.mid</span>. Оригінал: " : ""}<span class="kbd">${escapeHtml(mid)}</span> — усі партії, темп ${tm.bpm.toFixed(2)} BPM уже записаний у файл. Окремі партії — у папці <span class="kbd">MIDI</span>.</p></li>
+      <li><b>Семпли й лупи</b><p><span class="kbd">Samples</span> — удари барабанів, окремі ноти, вокальні фрази й лупи в темпі, вирізані з пісні.</p></li>
     </ol>
+    <div class="ex-daw"><b>Продовжити в іншій програмі</b><p class="muted small">WAV і MIDI — стандартні формати, тож проєкт відкривається в будь-якій музичній програмі. Покрокова інструкція для кожної з них — у файлі <span class="kbd">ЯК ВІДКРИТИ В ІНШИХ ПРОГРАМАХ.txt</span> у цій папці.</p><div class="ex-daw-list">${daws.map((d) => `<span>${d}</span>`).join("")}<span>та інші</span></div></div>
     <details><summary class="muted small" style="cursor:pointer;margin-top:12px">Усі файли (${r.files.length})</summary><div class="filetree">${r.files.map(escapeHtml).join("<br>")}</div></details>`;
   $("#ex-open").onclick = () => api.post(`/api/project/${S.pid}/open`);
 }

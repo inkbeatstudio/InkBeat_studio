@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>InkBeat — Song → FL Studio</title>
+<title>InkBeat — музична студія</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23121419'/%3E%3Cg fill='%23ffb547'%3E%3Crect x='6' y='12' width='3' height='8' rx='1.5'/%3E%3Crect x='11' y='7' width='3' height='18' rx='1.5'/%3E%3Crect x='16' y='10' width='3' height='12' rx='1.5'/%3E%3C/g%3E%3Cg fill='%234fd1c5'%3E%3Crect x='21' y='9' width='6' height='3' rx='1'/%3E%3Crect x='21' y='15' width='4' height='3' rx='1'/%3E%3Crect x='21' y='21' width='6' height='3' rx='1'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="/ui/style.css">
 </head>
@@ -11,7 +11,7 @@
 <header class="appbar">
   <div class="brand" data-go="home">
     <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#1b1e26"/><g fill="#ffb547"><rect x="6" y="12" width="3" height="8" rx="1.5"/><rect x="11" y="7" width="3" height="18" rx="1.5"/><rect x="16" y="10" width="3" height="12" rx="1.5"/></g><g fill="#4fd1c5"><rect x="21" y="9" width="6" height="3" rx="1"/><rect x="21" y="15" width="4" height="3" rx="1"/><rect x="21" y="21" width="6" height="3" rx="1"/></g></svg>
-    <div class="brand-text"><b>INKBEAT</b><span>song → FL Studio</span></div>
+    <div class="brand-text"><b>INKBEAT</b><span>music studio</span></div>
   </div>
   <nav class="nav">
     <button class="nav-btn" data-go="home">Новий розбір</button>
@@ -25,7 +25,7 @@
   <section class="hero">
     <h1>Розбери пісню на <em>редаговані</em> доріжки</h1>
     <p class="lead">Вокальна мелодія, барабани, бас, клавішні, гітара й акорди — як MIDI-ноти, з темпом, тональністю
-      та структурою. Відкриваєш у FL Studio і міняєш що завгодно.</p>
+      та структурою. Міняєш що завгодно прямо тут — і зберігаєш готову пісню, відео або проєкт для будь-якої музичної програми.</p>
   </section>
 
   <section class="setup">
@@ -102,7 +102,7 @@
   <section class="tips">
     <div class="tip"><b>1</b><div><h4>Найкраща якість</h4><p>Якщо у вас є окремі доріжки пісні (стеми) у WAV, завантажте їх режимом «Готові стеми». Так ноти виходять точнішими, ніж після розділення готового міксу.</p></div></div>
     <div class="tip"><b>2</b><div><h4>Перевірте на слух</h4><p>У редакторі перемикайте кожну доріжку між оригіналом і MIDI — одразу чути, де ноти точні.</p></div></div>
-    <div class="tip"><b>3</b><div><h4>Підкрутіть і експортуйте</h4><p>Чутливість, квантизація, тональність, темп. Потім «Експорт у FL Studio» — і все готово до імпорту.</p></div></div>
+    <div class="tip"><b>3</b><div><h4>Підкрутіть і експортуйте</h4><p>Чутливість, квантизація, тональність, темп. Потім «Експорт» — готова пісня в MP3 / WAV, а також MIDI й доріжки, які відкриваються в будь-якій музичній програмі.</p></div></div>
   </section>
 </main>
 
@@ -155,9 +155,9 @@
       <a class="btn ghost" id="dl-midi" download>MIDI ⤓</a>
       <button class="btn ghost" id="t-noise" data-hint="Шумоприбирання: окреме вікно, де можна вибрати будь-яку доріжку із записом і прибрати шипіння, гул чи фон — без попереднього виділення"><svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:-2px;margin-right:5px"><path d="M2 12h2l2-6 3 12 3-9 2 6 2-3h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Шум</button>
       <button class="btn ghost" id="t-video" data-hint="Відеостудія: записати відео трека для TikTok, Reels, Shorts, YouTube чи Instagram"><svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:-2px;margin-right:5px"><rect x="3" y="6" width="13" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 10.5l5-3v9l-5-3z" fill="currentColor"/></svg>Відео</button>
-      <button class="btn primary" id="export-btn">
+      <button class="btn primary" id="export-btn" data-hint="Зберегти результат: готову пісню в MP3 і WAV, окремі доріжки, MIDI, семпли — усе відкривається в будь-якій музичній програмі">
         <svg viewBox="0 0 24 24" width="17" height="17"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Експорт у FL Studio
+        Експорт
       </button>
     </div>
   </div>
@@ -262,7 +262,7 @@
             <label>Зсув сітки <span class="val" id="s-off-val">0 мс</span></label>
             <input type="range" id="s-off" min="-120" max="120" step="1" value="0">
           </div>
-          <div class="row"><label title="Додає тишу на початку, щоб перша сильна доля пісні стала на початок такту FL">Вирівняти під такти FL</label><input type="checkbox" class="switch" id="s-align" checked></div>
+          <div class="row"><label title="Додає тишу на початку, щоб перша сильна доля пісні стала на початок такту в будь-якій музичній програмі">Вирівняти під такти</label><input type="checkbox" class="switch" id="s-align" checked></div>
         </div>
 
         <div class="group">
@@ -290,7 +290,7 @@
           </div>
           <div class="row hint-row"><span class="muted" id="s-key-hint"></span></div>
           <div class="row"><label title="Ноти поза гамою підтягуються до найближчої ноти гами">Підтягнути ноти до гами</label><input type="checkbox" class="switch" id="s-snap"></div>
-          <div class="row"><label data-hint="Додати окрему MIDI-доріжку з акордами пісні, розкладеними на ноти — готова гармонія для паду чи піаніно у FL Studio. Типово вимкнено">Доріжка акордів</label><input type="checkbox" class="switch" id="s-chords"></div>
+          <div class="row"><label data-hint="Додати окрему MIDI-доріжку з акордами пісні, розкладеними на ноти — готова гармонія для паду чи піаніно Studio. Типово вимкнено">Доріжка акордів</label><input type="checkbox" class="switch" id="s-chords"></div>
         </div>
 
         <div class="group">
@@ -330,7 +330,7 @@
               <select id="tf-prog"></select>
             </div>
           </div>
-          <p class="muted small">Порада: у FL Studio інструмент однаково можна замінити на будь-який свій — це лише підказка для імпорту.</p>
+          <p class="muted small">Порада: у будь-якій музичній програмі інструмент можна замінити на свій — це лише підказка для імпорту.</p>
         </div>
       </div>
       <div class="side-body" id="tab-sound" hidden>

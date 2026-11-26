@@ -181,7 +181,7 @@ EOF
 [Desktop Entry]
 Type=Application
 Name=InkBeat
-Comment=Пісня → редаговані доріжки для FL Studio
+Comment=Музична студія: розбір пісні на доріжки, редагування, зведення й відео
 Exec="$BIN/inkbeat"
 Icon=inkbeat
 Terminal=false
