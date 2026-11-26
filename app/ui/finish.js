@@ -837,7 +837,7 @@ openProject = async function(pid) {
 (function finishMenus() {
   const tools = MENUS["Інструменти"], view = MENUS["Вигляд"], edit = MENUS["Правка"];
   MENUS["Інструменти"] = () => tools().concat([null, ["EQ під референс…", needProject(openMatchEq)], ["Перевірка міксу (моно, телефон, машина…)", needProject(openMixCheck)], ["Клавіатура / MIDI-клавіатура", needProject(openKeyboard)]]);
-  MENUS["Правка"] = () => edit().concat([null, ["Маркер у позиції курсору  (Ctrl+M)", needProject(() => addMarker(S.playBeat))], ["Наступний маркер  (Alt+→)", needProject(() => jumpMarker(1))], ["Попередній маркер  (Alt+←)", needProject(() => jumpMarker(-1))]]);
+  MENUS["Правка"] = () => edit().concat([null, ["Видалені доріжки…", needProject(openRemovedTracks)], null, ["Маркер у позиції курсору  (Ctrl+M)", needProject(() => addMarker(S.playBeat))], ["Наступний маркер  (Alt+→)", needProject(() => jumpMarker(1))], ["Попередній маркер  (Alt+←)", needProject(() => jumpMarker(-1))]]);
   MENUS["Вигляд"] = () => view();
   const anaBtn = $("#t-ana");
   const tb = document.createElement("button");

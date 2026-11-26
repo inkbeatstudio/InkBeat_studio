@@ -128,6 +128,13 @@ class DesktopApi:
     def info(self):
         return {"desktop": True}
 
+    def open_url(self, url):
+        import webbrowser
+
+        if str(url).startswith("https://"):
+            webbrowser.open(url)
+        return True
+
 
 SPLASH = """<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 html,body{margin:0;height:100%;background:#0c0d11;color:#e9ebf1;font-family:'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;user-select:none;cursor:default}
@@ -235,10 +242,17 @@ def dark_titlebar(seconds=15):
 
 
 def desktop_main():
-    if sys.platform != "win32" or "--browser" in sys.argv or "--edge" in sys.argv:
+    if "--browser" in sys.argv or "--edge" in sys.argv or sys.platform not in ("win32", "darwin", "linux"):
         return False
     try:
         import webview
+
+        if sys.platform == "linux":
+            import subprocess as _sp
+
+            probe = "import sys; from PyQt6.QtWidgets import QApplication; from PyQt6 import QtWebEngineWidgets; QApplication(sys.argv)"
+            if _sp.run([sys.executable, "-c", probe], capture_output=True, timeout=20).returncode != 0:
+                return False
     except Exception:
         return False
     import json
@@ -329,11 +343,12 @@ def desktop_main():
         return False
 
     win.events.closing += on_closing
-    icon = ROOT / "app" / "ui" / "inkbeat.ico"
+    icon = ROOT / "app" / "ui" / ("inkbeat.ico" if sys.platform == "win32" else "inkbeat.png")
+    extra = {"gui": "qt"} if sys.platform == "linux" else {}
     try:
-        webview.start(boot, private_mode=False, storage_path=str(store), icon=str(icon))
+        webview.start(boot, private_mode=False, storage_path=str(store), icon=str(icon), **extra)
     except TypeError:
-        webview.start(boot, private_mode=False, storage_path=str(store))
+        webview.start(boot, private_mode=False, storage_path=str(store), **extra)
     if child is not None:
         try:
             child.terminate()

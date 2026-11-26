@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import time
@@ -9,7 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from . import project as P
-from . import separation
+from . import harmony, separation
 from .jsonio import read_json, write_json
 
 
@@ -181,8 +182,8 @@ def add_recording(pid: str, src: Path, start: float, name: str, kind: str, trans
     pdir = P.workspace() / pid
     p = P.load_project(pid)
     sr = int(p.get("sr", 44100))
-    first = pdir / "stems" / f"{p['tracks'][0]['id']}.wav"
-    L = sf.info(str(first)).frames if first.exists() else int(p["duration"] * sr)
+    first = pdir / "stems" / f"{p['tracks'][0]['id']}.wav" if p["tracks"] else None
+    L = sf.info(str(first)).frames if first is not None and first.exists() else int(p["duration"] * sr)
     y, _ = P.load_audio(src, sr)
     if y.shape[0] == 1:
         y = np.concatenate([y, y])
@@ -191,6 +192,9 @@ def add_recording(pid: str, src: Path, start: float, name: str, kind: str, trans
     if off < 0:
         y = y[:, -off:]
         off = 0
+    if p.get("mode") == "scratch" and off + y.shape[1] > L:
+        L = off + y.shape[1]
+        p["duration"] = max(float(p["duration"]), L / sr)
     out = np.zeros((2, L), np.float32)
     n = max(0, min(y.shape[1], L - off))
     out[:, off: off + n] = y[:, :n]
@@ -206,7 +210,9 @@ def add_recording(pid: str, src: Path, start: float, name: str, kind: str, trans
          "quiet": False, "recorded": True}
     if transcribe and role != "skip":
         P.transcribe_track(pdir, t, out, sr, None, progress)
+    dur = p["duration"]
     p = P.load_project(pid)
+    p["duration"] = max(float(p["duration"]), float(dur))
     p["tracks"].append(t)
     P.save_project(p)
     P.build(pid)
@@ -341,7 +347,7 @@ def prepare_transform(job, log):
     out = P.workspace() / "_uploads" / ("tr-" + uuid.uuid4().hex[:8])
     out.mkdir(parents=True, exist_ok=True)
     kinds = {}
-    tracks = [t for t in p["tracks"]]
+    tracks = [t for t in p["tracks"] if not ((p["settings"].get("tracks") or {}).get(t["id"]) or {}).get("removed")]
     for i, t in enumerate(tracks):
         if job.cancel:
             raise P.Cancelled()
@@ -370,3 +376,37 @@ def prepare_transform(job, log):
     job.mode = "stems"
     job.forced_kinds = kinds
     return out
+
+
+def create_empty(title: str, bpm: float, bpb: int, tonic: int, mode: str, bars: int) -> str:
+    bpm = float(min(260.0, max(40.0, bpm or 120.0)))
+    bpb = int(bpb) if int(bpb or 4) in (2, 3, 4, 5, 6, 7) else 4
+    bars = int(min(512, max(4, bars or 64)))
+    tonic = int(tonic or 0) % 12
+    mode = "minor" if mode == "minor" else "major"
+    title = P.slugify((title or "").strip() or "Новий трек")
+    pid = time.strftime("%Y%m%d-%H%M%S") + "-" + re.sub(r"\W+", "-", title.lower(), flags=re.UNICODE)[:30]
+    pdir = P.workspace() / pid
+    for sub in ("stems", "preview", "cache"):
+        (pdir / sub).mkdir(parents=True, exist_ok=True)
+    period = 60.0 / bpm
+    duration = bars * bpb * period
+    beats = [round(i * period, 6) for i in range(int(bars * bpb) + 1)]
+    name = f"{harmony.NOTE_NAMES[tonic]} {mode}"
+    settings = json.loads(json.dumps(P.DEFAULT_SETTINGS))
+    settings["beats_per_bar"] = bpb
+    project = {
+        "version": P.VERSION, "id": pid, "title": title, "created": time.strftime("%Y-%m-%d %H:%M"),
+        "mode": "scratch", "model": None, "sources": [], "sr": 44100, "duration": duration, "tracks": [],
+        "analysis": {"grid": {"bpm": bpm, "beat0": 0.0, "beats": beats, "confidence": 1.0}, "downbeat": 0,
+                     "key": {"tonic": tonic, "mode": mode, "name": name, "confidence": 1.0},
+                     "chords": [], "sections": []},
+        "settings": settings,
+    }
+    write_json(pdir / "project.json", project)
+    try:
+        P.prepare_kit(pid)
+    except Exception:
+        pass
+    P.build(pid)
+    return pid

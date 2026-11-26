@@ -82,7 +82,7 @@ renderSynth = function(box, T) {
     };
     b.oncontextmenu = async (e) => {
       e.preventDefault();
-      if (!confirm(`Видалити пресет «${b.dataset.upr}» з бібліотеки?`)) return;
+      if (!await inkConfirm("Підтвердження", "<p>" + escapeHtml(`Видалити пресет «${b.dataset.upr}» з бібліотеки?`) + "</p>", "Видалити", true)) return;
       await deletePreset("synth", b.dataset.upr);
       renderDock();
     };
@@ -278,12 +278,12 @@ async function openLibrary(tab) {
   $$("[data-play]", body).forEach((b) => b.onclick = () => libPlay(b.dataset.play, b));
   $$("[data-dels]", body).forEach((b) => b.onclick = async () => {
     const n = b.dataset.dels.replace(/^lib:/, "");
-    if (!confirm(`Видалити «${n}» з бібліотеки? Доріжки, що його використовують, замовкнуть.`)) return;
+    if (!await inkConfirm("Підтвердження", "<p>" + escapeHtml(`Видалити «${n}» з бібліотеки? Доріжки, що його використовують, замовкнуть.`) + "</p>", "Видалити", true)) return;
     setLib(await api.del("/api/library/sample/" + encodeURIComponent(n)));
     openLibrary("samples");
   });
   $$("[data-delp]", body).forEach((b) => b.onclick = async () => {
-    if (!confirm(`Видалити пресет «${b.dataset.n}»?`)) return;
+    if (!await inkConfirm("Підтвердження", "<p>" + escapeHtml(`Видалити пресет «${b.dataset.n}»?`) + "</p>", "Видалити", true)) return;
     await deletePreset(b.dataset.delp, b.dataset.n);
     openLibrary("presets");
   });
@@ -326,7 +326,7 @@ async function openHistory() {
     if (e.key === "Enter") $("#hist-save").click();
   };
   $$("[data-rs]", box).forEach((b) => b.onclick = async () => {
-    if (!confirm("Відновити цей знімок? Поточний стан збережеться як «Перед відновленням».")) return;
+    if (!await inkConfirm("Підтвердження", "<p>" + escapeHtml("Відновити цей знімок? Поточний стан збережеться як «Перед відновленням».") + "</p>", "Так", false)) return;
     stopPlay();
     await flushMix();
     await api.post(`/api/project/${S.pid}/snapshots/${b.dataset.rs}/restore`);
@@ -341,7 +341,7 @@ async function openHistory() {
   modal.hidden = false;
 }
 async function deleteRecording(t) {
-  if (!confirm(`Видалити запис «${t.name}» назавжди? Аудіо цього дубля буде стерто.`)) return;
+  if (!await inkConfirm(`Видалити запис «${t.name}»?`, "<p>Аудіо цього дубля буде стерто назавжди. Цю дію не можна скасувати.</p>", "Видалити назавжди", true)) return;
   stopPlay();
   await flushMix();
   const r = await fetch(`/api/project/${S.pid}/track/${t.id}`, { method: "DELETE" });

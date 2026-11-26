@@ -15,7 +15,7 @@ from . import cleanup, drums, harmony, midi_export, rhythm, samples, separation,
 from .jsonio import read_json, write_json
 from .transcribe import Note, Transcriber
 
-VERSION = "2.2.0"
+VERSION = "2.3.0"
 ANALYSIS_SR = 22050
 
 GRIDS = {"off": 0, "1/4": 1.0, "1/8": 0.5, "1/16": 0.25, "1/32": 0.125, "1/8T": 1 / 3, "1/16T": 1 / 6}
@@ -30,7 +30,7 @@ DEFAULT_SETTINGS = {
     "quantize": 0.6,
     "quantize_ends": False,
     "scale_snap": False,
-    "chords_track": True,
+    "chords_track": False,
     "split_drums": True,
     "key_override": None,
     "tracks": {},
@@ -517,12 +517,16 @@ def build(pid: str, settings_patch: dict | None = None) -> dict:
     if settings_patch:
         tracks_patch = settings_patch.pop("tracks", None)
         p["settings"].update(settings_patch)
+        if "chords_track" in settings_patch:
+            p["settings"]["chords_user"] = True
         if tracks_patch:
             for tid, v in tracks_patch.items():
                 p["settings"].setdefault("tracks", {}).setdefault(tid, {}).update(v)
         save_project(p)
     pdir = workspace() / pid
     s = p["settings"]
+    if not s.get("chords_user"):
+        s["chords_track"] = False
     tm = timing(p)
     grid = GRIDS.get(s.get("grid", "1/16"), 0.25)
     qs = float(s.get("quantize", 0.6))
@@ -535,8 +539,12 @@ def build(pid: str, settings_patch: dict | None = None) -> dict:
     end_beat = sec_to_beat(p["duration"], tm)
     out_tracks = []
 
+    removed = []
     for t in p["tracks"]:
         ts = track_settings(p, t["id"])
+        if ts.get("removed"):
+            removed.append({"id": t["id"], "name": ts["name"], "color": t["color"]})
+            continue
         notes_b = []
         if t["role"] == "skip":
             pass
@@ -613,7 +621,7 @@ def build(pid: str, settings_patch: dict | None = None) -> dict:
         b = cleanup.quantize_beats(b, max(grid, 0.25) if grid else 0, 1.0) if grid else b
         chords.append({"start": round(a, 4), "end": round(b, 4), "label": c["label"], "root": c["root"],
                        "kind": c["kind"]})
-    if s.get("chords_track", True):
+    if s.get("chords_track", False):
         cn = []
         for c in chords:
             if c["label"] == "N" or c["end"] - c["start"] <= 0:
@@ -631,7 +639,7 @@ def build(pid: str, settings_patch: dict | None = None) -> dict:
                          "end": round(db_beat + sec["end_bar"] * tm["bpb"], 4)})
     result = {"project": {k: p[k] for k in ("id", "title", "created", "mode", "duration", "version")},
               "timing": tm, "key": key, "detected_key": p["analysis"]["key"], "settings": s,
-              "tracks": out_tracks, "chords": chords,
+              "tracks": out_tracks, "chords": chords, "removed": removed,
               "sections": sections, "end_beat": end_beat,
               "confidence": {"tempo": p["analysis"]["grid"]["confidence"], "key": key.get("confidence", 0)}}
     write_json(pdir / "build.json", result, None)

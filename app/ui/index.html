@@ -42,6 +42,12 @@
         </div>
         <div><b>Готові стеми</b><span>Кілька файлів або папка. Найточніший результат.</span></div>
       </button>
+      <button class="mode-card mode-new" id="mode-new" data-hint="Порожній проєкт: свій темп і тональність, MIDI-доріжки, імпорт аудіо й запис голосу">
+        <div class="mode-ico">
+          <svg viewBox="0 0 48 48"><g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="7" y="7" width="34" height="34" rx="8"/><path d="M24 16v16M16 24h16"/></g></svg>
+        </div>
+        <div><b>З нуля</b><span>Порожній проєкт: MIDI, запис і свої звуки.</span></div>
+      </button>
     </div>
 
     <label class="drop" id="drop">
@@ -147,6 +153,7 @@
       <button class="btn ghost" id="t-lib" data-hint="Ваша бібліотека: свої семпли та збережені пресети інструментів і ефектів">Бібліотека</button>
       <button class="btn ghost" id="t-hist" data-hint="Історія: знімки стану проєкту, автозбереження і відновлення">Історія</button>
       <a class="btn ghost" id="dl-midi" download>MIDI ⤓</a>
+      <button class="btn ghost" id="t-video" data-hint="Відеостудія: записати відео трека для TikTok, Reels, Shorts, YouTube чи Instagram"><svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:-2px;margin-right:5px"><rect x="3" y="6" width="13" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 10.5l5-3v9l-5-3z" fill="currentColor"/></svg>Відео</button>
       <button class="btn primary" id="export-btn">
         <svg viewBox="0 0 24 24" width="17" height="17"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Експорт у FL Studio
@@ -280,7 +287,7 @@
           </div>
           <div class="row hint-row"><span class="muted" id="s-key-hint"></span></div>
           <div class="row"><label title="Ноти поза гамою підтягуються до найближчої ноти гами">Підтягнути ноти до гами</label><input type="checkbox" class="switch" id="s-snap"></div>
-          <div class="row"><label>Доріжка акордів</label><input type="checkbox" class="switch" id="s-chords" checked></div>
+          <div class="row"><label data-hint="Додати окрему MIDI-доріжку з акордами пісні, розкладеними на ноти — готова гармонія для паду чи піаніно у FL Studio. Типово вимкнено">Доріжка акордів</label><input type="checkbox" class="switch" id="s-chords"></div>
         </div>
 
         <div class="group">
@@ -452,5 +459,8 @@
 <script src="/ui/vst.js"></script>
 <script src="/ui/tools2.js"></script>
 <script src="/ui/help.js"></script>
+<script src="/ui/updates.js"></script>
+<script src="/ui/scratch.js"></script>
+<script src="/ui/video.js"></script>
 </body>
 </html>

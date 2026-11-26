@@ -41,12 +41,54 @@ const api = {
     return r.json();
   }
 };
-function toast(msg, err = false) {
+function toast(msg, err = false, action = null) {
   const t = document.createElement("div");
   t.className = "toast" + (err ? " err" : "");
   t.textContent = msg;
+  if (action) {
+    const b = document.createElement("button");
+    b.className = "toast-act";
+    b.textContent = action[0];
+    b.onclick = () => {
+      t.remove();
+      action[1]();
+    };
+    t.appendChild(b);
+  }
   $("#toasts").appendChild(t);
-  setTimeout(() => t.remove(), err ? 7e3 : 3500);
+  setTimeout(() => t.remove(), action ? 9e3 : err ? 7e3 : 3500);
+}
+function inkConfirm(title, html, okLabel = "Так", danger = false) {
+  return new Promise((resolve) => {
+    let m = document.getElementById("ink-confirm");
+    if (!m) {
+      m = document.createElement("div");
+      m.className = "modal";
+      m.id = "ink-confirm";
+      document.body.appendChild(m);
+    }
+    m.innerHTML = `<div class="modal-card" style="width:min(480px,92vw)"><div class="modal-head"><h3></h3><button class="x" data-k="no">&times;</button></div>
+      <div class="modal-body"><div class="ic-text"></div><div class="modal-actions"><button class="btn ghost" data-k="no">Скасувати</button><button class="btn ${danger ? "danger" : "primary"}" data-k="yes"></button></div></div></div>`;
+    m.querySelector("h3").textContent = title;
+    m.querySelector(".ic-text").innerHTML = html;
+    m.querySelector('[data-k="yes"]').textContent = okLabel;
+    const done = (v) => {
+      m.hidden = true;
+      document.removeEventListener("keydown", key, true);
+      resolve(v);
+    };
+    const key = (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); done(false); }
+      if (e.key === "Enter") { e.stopPropagation(); done(true); }
+    };
+    m.onclick = (e) => {
+      const k = e.target.dataset.k || (e.target === m ? "no" : "");
+      if (k) done(k === "yes");
+    };
+    document.addEventListener("keydown", key, true);
+    m.hidden = false;
+    m.querySelector('[data-k="yes"]').focus();
+  });
 }
 const fmtTime = (s) => {
   s = Math.max(0, s);
@@ -90,9 +132,9 @@ async function loadSystem() {
     const s = await api.get("/api/system");
     S.system = s;
     const chip = $("#sys-chip");
-    chip.textContent = s.device === "cuda" ? `GPU · ${s.gpu || "CUDA"}` : "CPU";
-    chip.className = "sys " + (s.device === "cuda" ? "gpu" : "cpu");
-    chip.title = s.device === "cuda" ? "Розділення працює на відеокарті — швидко" : "Розділення працює на процесорі. Пісня 3–4 хв займе приблизно 2–6 хвилин.";
+    chip.textContent = s.device === "cuda" ? `GPU · ${s.gpu || "CUDA"}` : s.device === "mps" ? "GPU · Apple" : "CPU";
+    chip.className = "sys " + (s.device === "cuda" || s.device === "mps" ? "gpu" : "cpu");
+    chip.title = s.device === "cuda" || s.device === "mps" ? "Розділення працює на відеокарті — швидко" : "Розділення працює на процесорі. Пісня 3–4 хв займе приблизно 2–6 хвилин.";
     if (!s.separator) {
       chip.classList.add("bad");
       chip.title = "Модуль розділення не встановлено — працює лише режим стемів";
@@ -132,7 +174,7 @@ function setMode(m) {
   if (m === "mix" && S.files.length > 1) S.files = S.files.slice(0, 1);
   renderFiles();
 }
-$$(".mode-card").forEach((c) => c.addEventListener("click", () => setMode(c.dataset.mode)));
+$$(".mode-card[data-mode]").forEach((c) => c.addEventListener("click", () => setMode(c.dataset.mode)));
 $$("#model-seg button").forEach((b) => b.addEventListener("click", () => {
   S.model = b.dataset.model;
   $$("#model-seg button").forEach((x) => x.classList.toggle("active", x === b));
@@ -373,7 +415,7 @@ async function loadProjects() {
     c.onclick = () => openProject(p.id);
     c.querySelector(".del").onclick = async (e) => {
       e.stopPropagation();
-      if (!confirm(`Видалити проєкт «${p.title}» разом зі стемами?`)) return;
+      if (!await inkConfirm("Підтвердження", "<p>" + escapeHtml(`Видалити проєкт «${p.title}» разом зі стемами?`) + "</p>", "Видалити", true)) return;
       await api.del("/api/project/" + p.id);
       loadProjects();
     };
@@ -444,7 +486,7 @@ function renderEditor() {
   $("#s-key").value = `${B.key.tonic}|${B.key.mode}`;
   $("#s-key-hint").textContent = B.key.manual ? `визначено: ${B.detected_key.name}` : B.detected_key.alternatives ? `інші варіанти: ${B.detected_key.alternatives.join(", ")}` : "";
   $("#s-snap").checked = !!st.scale_snap;
-  $("#s-chords").checked = st.chords_track !== false;
+  $("#s-chords").checked = st.chords_track === true;
   $("#s-split").checked = st.split_drums !== false;
   for (const t of B.tracks) if (!S.ui[t.id]) S.ui[t.id] = { mute: false, solo: false, src: t.has_audio ? null : "midi" };
   syncMix();
@@ -726,7 +768,7 @@ $("#s-snap").addEventListener("change", (e) => rebuild({ scale_snap: e.target.ch
 $("#s-chords").addEventListener("change", (e) => rebuild({ chords_track: e.target.checked }, true));
 $("#s-split").addEventListener("change", (e) => rebuild({ split_drums: e.target.checked }, true));
 $("#s-reset").onclick = async () => {
-  if (!confirm("Повернути всі налаштування до автоматично визначених?")) return;
+  if (!await inkConfirm("Підтвердження", "<p>" + escapeHtml("Повернути всі налаштування до автоматично визначених?") + "</p>", "Так", false)) return;
   S.B = await api.post(`/api/project/${S.pid}/reset`);
   renderEditor();
 };
@@ -764,9 +806,10 @@ async function renderSound() {
       ${smps && smps.length ? `<div class="smp-list">${smps.map((sm) => `<button class="smp-btn" data-f="${escapeHtml(sm.file)}"><i>▶</i>${escapeHtml(sm.name)}<em>${sm.root_name ? "root " + sm.root_name : sm.fpc_pad ? "пад " + sm.fpc_pad : ""}</em></button>`).join("")}</div>` : ""}
     </div>`;
   };
-  const tracks = [...kit.tracks].sort((a, b) => (b.id === S.sel) - (a.id === S.sel));
+  const live = new Set(S.B.tracks.map((x) => x.id));
+  const tracks = kit.tracks.filter((x) => live.has(x.id)).sort((a, b) => (b.id === S.sel) - (a.id === S.sel));
   box.innerHTML = `<p class="muted small">Рекомендації зі стандартних плагінів FL Studio, підібрані за аналізом оригіналу, і семпли, вирізані з цієї пісні. Усе це також потрапляє в експорт (папка Samples + «Звуковий гід FL Studio.html»).</p>
-    <button class="btn ghost wide" id="open-guide" style="margin-bottom:12px">Відкрити повний звуковий гід</button>` + tracks.map((t) => card(t.name, t.color, t.insert, t.rec, t.samples, t.id)).join("") + card("Chords (harmony)", "#eab308", kit.chords.insert, kit.chords.rec, [], "_chords") + kit.buses.map((b) => `<div class="snd-card" style="border-left-color:#4fd1c5"><h4>Шина ${escapeHtml(b.name)}<span>інсерт ${b.insert}</span></h4>${b.chain.map(fx).join("")}</div>`).join("") + `<div class="snd-card" style="border-left-color:#4fd1c5"><h4>Master</h4>${kit.master.map(fx).join("")}</div>`;
+    <button class="btn ghost wide" id="open-guide" style="margin-bottom:12px">Відкрити повний звуковий гід</button>` + tracks.map((t) => card(t.name, t.color, t.insert, t.rec, t.samples, t.id)).join("") + (live.has("_chords") ? card("Chords (harmony)", "#eab308", kit.chords.insert, kit.chords.rec, [], "_chords") : "") + kit.buses.map((b) => `<div class="snd-card" style="border-left-color:#4fd1c5"><h4>Шина ${escapeHtml(b.name)}<span>інсерт ${b.insert}</span></h4>${b.chain.map(fx).join("")}</div>`).join("") + `<div class="snd-card" style="border-left-color:#4fd1c5"><h4>Master</h4>${kit.master.map(fx).join("")}</div>`;
   $("#open-guide").onclick = () => window.open(`/api/project/${S.pid}/guide`, "_blank");
   $$(".smp-btn", box).forEach((b) => b.onclick = () => playSample(b.dataset.f, b));
 }

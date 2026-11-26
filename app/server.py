@@ -14,6 +14,8 @@ from pathlib import Path
 from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 
 from .engine import care as CARE
+from .engine import updater as UPD
+from .engine import video as VID
 from .engine import extras as X
 from .engine import project as P
 
@@ -85,7 +87,7 @@ def system():
     try:
         import torch
 
-        info["device"] = "cuda" if torch.cuda.is_available() else "cpu"
+        info["device"] = "cuda" if torch.cuda.is_available() else ("mps" if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available() else "cpu")
         if info["device"] == "cuda":
             info["gpu"] = torch.cuda.get_device_name(0)
         import demucs
@@ -626,13 +628,66 @@ def snapshots_del(pid, sid):
     return jsonify({"ok": True})
 
 
+@app.post("/api/project/<pid>/video")
+def project_video(pid):
+    d = _pdir(pid)
+    f = request.files["file"]
+    form = request.form
+    tmpd = d / "cache" / "video_upload"
+    tmpd.mkdir(parents=True, exist_ok=True)
+    suf = ".mp4" if "mp4" in (f.mimetype or "") or (f.filename or "").endswith(".mp4") else ".webm"
+    src = tmpd / (uuid.uuid4().hex[:8] + suf)
+    f.save(src)
+    num = lambda k, dv=0.0: float(form.get(k) or dv)
+
+    def fn(prog):
+        try:
+            return VID.finish(pid, src, form.get("title") or "InkBeat", form.get("label") or "video", form.get("hq") == "1",
+                              num("audio_start"), num("lead"), num("duration"), int(num("fps", 30)), prog)
+        finally:
+            src.unlink(missing_ok=True)
+
+    return _job_thread(fn)
+
+
+@app.get("/api/project/<pid>/video/file/<name>")
+def project_video_file(pid, name):
+    f = VID.out_dir(Path(_pdir(pid)).name) / Path(name).name
+    if not f.exists():
+        abort(404)
+    return send_file(f, conditional=True)
+
+
+@app.post("/api/project/<pid>/video/open")
+def project_video_open(pid):
+    _open_folder(VID.out_dir(Path(_pdir(pid)).name))
+    return jsonify({"ok": True})
+
+
+@app.get("/api/video/support")
+def video_support():
+    return jsonify({"ffmpeg": bool(VID.ffmpeg_exe())})
+
+
+@app.post("/api/projects/new")
+def projects_new():
+    j = request.get_json(force=True, silent=True) or {}
+    try:
+        pid = X.create_empty(j.get("title", ""), float(j.get("bpm") or 120), int(j.get("bpb") or 4),
+                             int(j.get("tonic") or 0), j.get("mode", "major"), int(j.get("bars") or 64))
+    except Exception as e:
+        return jsonify({"error": _friendly(e)}), 500
+    return jsonify({"pid": pid})
+
+
 @app.post("/api/project/<pid>/record")
 def project_record(pid):
     d = _pdir(pid)
     f = request.files["file"]
     tmpd = d / "cache" / "rec_upload"
     tmpd.mkdir(parents=True, exist_ok=True)
-    src = tmpd / (uuid.uuid4().hex[:8] + ".wav")
+    suf = Path(f.filename or "take.wav").suffix.lower()
+    src = tmpd / (uuid.uuid4().hex[:8] + (suf if suf in (".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aif", ".aiff", ".opus") else ".wav"))
     f.save(src)
     form = request.form
     jid = uuid.uuid4().hex[:10]
@@ -747,6 +802,29 @@ def _incoming_file(kind):
     if not pth.is_file():
         abort(400)
     return pth, False
+
+
+@app.get("/api/update/info")
+def update_info():
+    return jsonify({"current": P.VERSION, "prefs": UPD.prefs(), "repo": UPD.source()["repo"], "platform": sys.platform})
+
+
+@app.post("/api/update/check")
+def update_check():
+    j = request.get_json(force=True, silent=True) or {}
+    return jsonify(UPD.check(force=bool(j.get("force"))))
+
+
+@app.post("/api/update/prefs")
+def update_prefs():
+    j = request.get_json(force=True, silent=True) or {}
+    p = UPD.save_prefs(j)
+    return jsonify({"prefs": p, "repo": UPD.source()["repo"]})
+
+
+@app.post("/api/update/install")
+def update_install():
+    return _job_thread(UPD.install)
 
 
 @app.post("/api/update")

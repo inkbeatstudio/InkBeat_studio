@@ -18,7 +18,7 @@ function tracksAll() {
       list.push({ ...t, id: c.id, name: c.name, color: c.color || t.color, of: t.id, clone: true, settings: t.settings });
     }
   }
-  for (const g of gens) list.push({ id: g.id, name: g.name, color: g.color, kind: "gen", role: g.role, is_drums: !!g.is_drums, has_audio: false, virtual: true, gen: true, enabled: true, notes: g.notes, program: g.program || 0, settings: {} });
+  for (const g of gens) list.push({ id: g.id, name: g.name, color: g.color, kind: "gen", role: g.role, is_drums: !!g.is_drums, has_audio: false, virtual: true, gen: true, user: !!g.user, enabled: true, notes: g.notes, program: g.program || 0, settings: {} });
   _tracksCache = list;
   _tracksKey = key;
   return list;
@@ -143,10 +143,10 @@ function renderHeads() {
     const ver = m.source ? " · оброблено" : "";
     const fxn = m.fx.filter((f) => f.on).length;
     const nn = trackNotes(t).length;
-    const sub = (t.gen ? "згенеровано · " : "") + (t.is_drums ? `${nn} ударів` : `${nn} нот`) + (mt(t.id).notes && !t.gen ? " · змінено" : "");
+    const sub = (t.gen ? (t.user ? "MIDI · " : "згенеровано · ") : t.id === "_chords" ? "з акордів пісні · " : "") + (t.is_drums ? `${nn} ударів` : `${nn} нот`) + (mt(t.id).notes && !t.gen ? " · змінено" : "");
     h.innerHTML = `<span class="cbar" style="background:${t.color}"></span>
       <canvas class="lh-meter" width="6" height="60"></canvas>
-      <div class="lh-top"><span class="lh-name" title="${escapeHtml(t.name)}">${t.clone ? "⧉ " : ""}${escapeHtml(t.name)}</span>
+      <div class="lh-top"><span class="lh-name" data-hint="${t.id === "_chords" ? "Доріжка з акордами пісні, розкладеними на ноти — готова гармонія для FL Studio. Вимкнути: меню ⋯ → «Видалити доріжку» або галочка «Доріжка акордів» у панелі «Проєкт»." : escapeHtml(t.name)}">${t.clone ? "⧉ " : ""}${escapeHtml(t.name)}</span>
         <button class="lh-more" data-hint="Меню доріжки: дублювати, видалити, перейменувати, скинути кліпи">⋯</button></div>
       <div class="lh-sub">${sub}${fxn ? ` · ${fxn} FX` : ""}${ver}</div>
       <div class="lh-btns">
@@ -223,7 +223,7 @@ function trackMenu(t, e) {
       loadAudio();
     }],
     null,
-    t.gen ? ["Видалити згенеровану доріжку", () => {
+    t.gen ? [t.user ? "Видалити доріжку" : "Видалити згенеровану доріжку", () => {
       pushUndo("видалити доріжку");
       S.mix.gens = S.mix.gens.filter((g) => g.id !== t.id);
       delete S.mix.tracks[t.id];
@@ -237,13 +237,68 @@ function trackMenu(t, e) {
       if (S.sel === t.id) S.sel = null;
       _tracksKey = "";
       afterEdit(true);
-    }, "danger"] : t.recorded ? ["Видалити цей запис", () => deleteRecording(t), "danger"] : ["Вимкнути (M) — оригінальні доріжки не видаляються", () => {
-      m.mute = true;
-      saveMix();
-      applyGains();
-      renderHeads();
-    }]
+    }, "danger"] : t.recorded ? ["Видалити цей запис", () => deleteRecording(t), "danger"] : ["Видалити доріжку", () => removeTrack(t), "danger"]
   ]);
+}
+async function removeTrack(t) {
+  const chords = t.id === "_chords";
+  const copies = (S.mix.clones || []).filter((c) => c.of === t.id).length;
+  const ok = await inkConfirm(`Видалити «${t.name}»?`,
+    chords ? "<p>Це автоматична доріжка акордів — програма створила її з гармонії пісні. Вона зникне з редактора та з експорту у FL Studio.</p><p class=\"muted\">Увімкнути її знову можна галочкою «Доріжка акордів» у панелі «Проєкт → Гармонія».</p>"
+      : `<p>Доріжка зникне з редактора, мікшера й експорту (MIDI, стеми, мікс).${copies ? ` Разом з нею сховаються й ${copies} її копії.` : ""}</p><p class="muted">Файли не стираються: повернути доріжку з усіма ефектами можна через «Правка → Видалені доріжки…».</p>`,
+    "Видалити", true);
+  if (!ok) return;
+  stopPlay();
+  await flushMix();
+  if (S.sel === t.id || (S.mix.clones || []).some((c) => c.of === t.id && c.id === S.sel)) S.sel = null;
+  _tracksKey = "";
+  await buildNow(chords ? { chords_track: false } : { tracks: { [t.id]: { removed: true } } });
+  toast(`Доріжку «${t.name}» видалено.`, false, ["Повернути", () => restoreTrack(t.id)]);
+}
+async function buildNow(patch) {
+  try {
+    $("#audio-status").textContent = "перерахунок…";
+    S.B = await api.post(`/api/project/${S.pid}/build`, patch);
+    _tracksKey = "";
+    _tracksCache = null;
+    const cb = document.getElementById("s-chords");
+    if (cb) cb.checked = S.B.settings.chords_track !== false;
+    renderEditor();
+    await loadAudio();
+  } catch (e) {
+    toast("Не вдалося оновити проєкт: " + e.message, true);
+  }
+  $("#audio-status").textContent = "";
+}
+async function restoreTrack(id) {
+  stopPlay();
+  _tracksKey = "";
+  await buildNow(id === "_chords" ? { chords_track: true } : { tracks: { [id]: { removed: false } } });
+  toast("Доріжку повернуто.");
+}
+function openRemovedTracks() {
+  if (!S.B) return;
+  const list = (S.B.removed || []).slice();
+  let m = document.getElementById("removed-modal");
+  if (!m) {
+    m = document.createElement("div");
+    m.className = "modal";
+    m.id = "removed-modal";
+    document.body.appendChild(m);
+  }
+  m.innerHTML = `<div class="modal-card" style="width:min(520px,92vw)"><div class="modal-head"><h3>Видалені доріжки</h3><button class="x" data-k="x">&times;</button></div>
+    <div class="modal-body"><p class="muted">Видалені доріжки не потрапляють в експорт, але їхні файли й ефекти збережені. Натисніть «Повернути», щоб доріжка знову з'явилася в проєкті.</p>
+    ${list.length ? list.map((r) => `<div class="rm-row"><span class="cbar" style="background:${r.color}"></span><span class="rm-name">${escapeHtml(r.name)}</span><button class="btn small" data-r="${escapeHtml(r.id)}">Повернути</button></div>`).join("") : `<p>Немає видалених доріжок.</p>`}
+    <div class="modal-actions"><button class="btn ghost" data-k="x">Закрити</button></div></div></div>`;
+  m.onclick = async (e) => {
+    if (e.target.dataset.k === "x" || e.target === m) m.hidden = true;
+    const r = e.target.dataset.r;
+    if (r) {
+      m.hidden = true;
+      await restoreTrack(r);
+    }
+  };
+  m.hidden = false;
 }
 function duplicateTrack(t) {
   if (t.gen) {
@@ -1820,7 +1875,7 @@ function renderVerTab(el, T) {
     renderDock();
   });
   $$("[data-delv]", el).forEach((b) => b.onclick = async () => {
-    if (!confirm("Видалити цю версію назавжди?")) return;
+    if (!await inkConfirm("Підтвердження", "<p>" + escapeHtml("Видалити цю версію назавжди?") + "</p>", "Видалити", true)) return;
     await api.del(`/api/project/${S.pid}/version/${b.dataset.delv}`);
     for (const id in S.mix.tracks) if (S.mix.tracks[id].source === b.dataset.delv) S.mix.tracks[id].source = null;
     S.versions = await api.get(`/api/project/${S.pid}/versions`);

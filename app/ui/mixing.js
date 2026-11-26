@@ -818,8 +818,8 @@ function renderMixerDock() {
       renderDock();
     };
     const dl = $("[data-del]", box);
-    if (dl) dl.onclick = () => {
-      if (!confirm(`Видалити шину «${R.m.name}»? Доріжки, що йшли в неї, повернуться на Master.`)) return;
+    if (dl) dl.onclick = async () => {
+      if (!await inkConfirm("Підтвердження", "<p>" + escapeHtml(`Видалити шину «${R.m.name}»? Доріжки, що йшли в неї, повернуться на Master.`) + "</p>", "Видалити", true)) return;
       pushUndo("видалити шину");
       S.mix.buses = S.mix.buses.filter((b) => b.id !== R.id);
       for (const t of tracksAll()) {

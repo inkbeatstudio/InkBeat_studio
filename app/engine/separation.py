@@ -62,6 +62,9 @@ def device_name() -> str:
 
         if torch.cuda.is_available():
             return "cuda"
+        mps = getattr(torch.backends, "mps", None)
+        if mps is not None and mps.is_available():
+            return "mps"
     except Exception:
         pass
     return "cpu"
@@ -79,7 +82,7 @@ def separate(audio: np.ndarray, sr: int, model_key: str = "6", progress=None, lo
     model.eval()
     dev = device_name()
     if log:
-        log(f"Розділяю на {'відеокарті' if dev == 'cuda' else 'процесорі'}…")
+        log(f"Розділяю на {'відеокарті' if dev in ('cuda', 'mps') else 'процесорі'}…")
     msr = model.samplerate
     if sr != msr:
         import librosa
@@ -121,8 +124,17 @@ def separate(audio: np.ndarray, sr: int, model_key: str = "6", progress=None, lo
     demucs.apply.tqdm = _TqdmModule
     try:
         with torch.no_grad():
-            out = demucs.apply.apply_model(model, wav[None], device=dev, shifts=1, split=True, overlap=0.25,
-                                           progress=True, num_workers=0)[0]
+            try:
+                out = demucs.apply.apply_model(model, wav[None], device=dev, shifts=1, split=True, overlap=0.25,
+                                               progress=True, num_workers=0)[0]
+            except Exception:
+                if dev != "mps":
+                    raise
+                if log:
+                    log("Відеокарта Mac не впоралась із цією моделлю — продовжую на процесорі…")
+                model.cpu()
+                out = demucs.apply.apply_model(model, wav[None], device="cpu", shifts=1, split=True, overlap=0.25,
+                                               progress=True, num_workers=0)[0]
     finally:
         demucs.apply.tqdm = old
     out = out * std + mean
