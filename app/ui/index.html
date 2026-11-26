@@ -153,6 +153,7 @@
       <button class="btn ghost" id="t-lib" data-hint="Ваша бібліотека: свої семпли та збережені пресети інструментів і ефектів">Бібліотека</button>
       <button class="btn ghost" id="t-hist" data-hint="Історія: знімки стану проєкту, автозбереження і відновлення">Історія</button>
       <a class="btn ghost" id="dl-midi" download>MIDI ⤓</a>
+      <button class="btn ghost" id="t-noise" data-hint="Шумоприбирання: окреме вікно, де можна вибрати будь-яку доріжку із записом і прибрати шипіння, гул чи фон — без попереднього виділення"><svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:-2px;margin-right:5px"><path d="M2 12h2l2-6 3 12 3-9 2 6 2-3h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Шум</button>
       <button class="btn ghost" id="t-video" data-hint="Відеостудія: записати відео трека для TikTok, Reels, Shorts, YouTube чи Instagram"><svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:-2px;margin-right:5px"><rect x="3" y="6" width="13" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 10.5l5-3v9l-5-3z" fill="currentColor"/></svg>Відео</button>
       <button class="btn primary" id="export-btn">
         <svg viewBox="0 0 24 24" width="17" height="17"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -215,6 +216,8 @@
           <div class="tl-spacer" id="tl-spacer"></div>
         </div>
       </div>
+      <div class="tl-hcorner"><button class="tbtn sm" id="hb-fit" data-hint="Показати всю пісню в ширину вікна">⤢</button></div>
+      <div class="tl-hbar" id="tl-hbar" data-hint="Огляд усієї пісні. Тягніть світлу рамку або клацніть у потрібне місце, щоб перейти туди. Коліщатко з Shift теж гортає вбік"><canvas id="cv-hbar"></canvas></div>
     </div>
     <div class="dock" id="dock">
       <div class="dock-resize" id="dock-resize" data-hint="Потягніть, щоб змінити висоту панелі"></div>
@@ -442,6 +445,7 @@
 </aside>
 <footer class="hintbar" id="hintbar"><span id="hint-text">Наведіть мишку на будь-яку кнопку — тут з'явиться підказка, що вона робить.</span></footer>
 <div class="toasts" id="toasts"></div>
+<script src="/ui/keys.js"></script>
 <script src="/ui/gm.js"></script>
 <script src="/ui/dsp.js"></script>
 <script src="/ui/plugins.js"></script>
@@ -462,5 +466,8 @@
 <script src="/ui/updates.js"></script>
 <script src="/ui/scratch.js"></script>
 <script src="/ui/video.js"></script>
+<script src="/ui/history.js"></script>
+<script src="/ui/denoise.js"></script>
+<script src="/ui/nav.js"></script>
 </body>
 </html>

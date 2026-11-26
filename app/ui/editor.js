@@ -555,8 +555,10 @@ body.addEventListener("mousedown", (e) => {
   closeMenu();
   const h = hitClip(e);
   if (!h) return;
-  if (S.sel !== h.t.id) {
+  if (S.sel !== h.t.id || S.dockMaster) {
+    S.dockMaster = false;
     S.sel = h.t.id;
+    onSelectTrack();
     renderHeads();
     renderTrackForm();
     renderDock();
@@ -1693,7 +1695,7 @@ function renderProcTab(el, T) {
   $$("[data-op]", el).forEach((b) => b.onclick = () => openProcess(b.dataset.op));
 }
 function openProcess(op, opts = {}) {
-  const T = dockTarget() || { t: findT(S.sel), m: mt(S.sel) };
+  const T = opts.target || dockTarget() || { t: findT(S.sel), m: mt(S.sel) };
   if (!T.t) return toast("Виберіть доріжку.");
   if (!T.t.has_audio) return toast("Обробка звуку доступна для доріжок із записом (не для MIDI-акордів).");
   const d = PROC[op], P = d.defaults();
@@ -1841,7 +1843,7 @@ function previewer(T, op, P, clip) {
     document.removeEventListener("keydown", onKey, true);
     const b = $("#pv-play"); if (b) b.textContent = "▶ Прослухати";
   }
-  function onKey(e) { if (e.key.toLowerCase() === "a" && !e.target.matches("input[type=text], input[type=number]")) { e.preventDefault(); e.stopPropagation(); setAB(ab === "a" ? "b" : "a"); } }
+  function onKey(e) { if (e.key.toLowerCase() === "a" && !typingIn(e.target)) { e.preventDefault(); e.stopPropagation(); setAB(ab === "a" ? "b" : "a"); } }
   $("#pv-play").onclick = async () => {
     if (playing) return stop();
     if (S.playing) stopPlay();
@@ -2059,8 +2061,14 @@ $$("#listen-seg button").forEach((b) => b.addEventListener("click", () => {
     draw();
   }
 }));
+function typingIn(el) {
+  if (!el || !el.matches) return false;
+  if (el.isContentEditable || el.matches("textarea, select")) return true;
+  return el.matches("input") && !/^(range|checkbox|radio|button|color|file)$/i.test(el.type || "");
+}
 document.addEventListener("keydown", (e) => {
-  if (S.view !== "project" || e.target.matches("input, select, textarea")) return;
+  if (S.view !== "project" || typingIn(e.target)) return;
+  if (document.querySelector(".modal:not([hidden])") && !e.ctrlKey && !e.metaKey) return;
   const k = e.key.toLowerCase(), ctrl = e.ctrlKey || e.metaKey;
   if (e.code === "Space") {
     e.preventDefault();
@@ -2094,6 +2102,7 @@ document.addEventListener("keydown", (e) => {
   } else if (e.key === "+" || e.key === "=") setZoom(S.ppb * 1.25);
   else if (e.key === "-") setZoom(S.ppb / 1.25);
   else if (k === "escape") {
+    if (!S.selClips.size && S.sel) { S.sel = null; onSelectTrack(); renderHeads(); renderTrackForm(); layout(); }
     S.selClips.clear();
     closeMenu();
     draw();

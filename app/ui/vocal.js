@@ -398,7 +398,7 @@ function peBind(T) {
   }
 }
 document.addEventListener("keydown", (e) => {
-  if (S.view !== "project" || S.dockTab !== "pitch" || !PE.map || e.target.matches("input, select, textarea")) return;
+  if (S.view !== "project" || S.dockTab !== "pitch" || !PE.map || typingIn(e.target)) return;
   if (!$("#pe-cv")) return;
   if ((e.key === "ArrowUp" || e.key === "ArrowDown") && PE.sel.size) {
     e.preventDefault();
@@ -569,7 +569,7 @@ function openCompSetup() {
     window.addEventListener("mouseup", up);
   }, true);
   document.addEventListener("keydown", (e) => {
-    if (S.view !== "project" || e.target.matches("input, select, textarea") || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (S.view !== "project" || typingIn(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key.toLowerCase() === "b" && !REC.open) {
       e.preventDefault();
       compGroup().length < 2 ? openCompSetup() : setTool("comp");

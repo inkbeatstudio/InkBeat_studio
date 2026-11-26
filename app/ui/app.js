@@ -520,7 +520,7 @@ function renderEditor() {
   draw();
 }
 function selectTrack(id) {
-  S.sel = S.sel === id ? null : id;
+  S.sel = id || null;
   onSelectTrack();
   if (S.sel && $("#tab-sound").hidden) switchTab("track");
   else if (!$("#tab-sound").hidden) renderSound();

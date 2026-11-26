@@ -579,7 +579,7 @@ function kbToggleRec() {
   toast("Запис нот: грайте. Ще раз червона кнопка — зупинити.");
 }
 document.addEventListener("keydown", (e) => {
-  if (!KB.typing || e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.target.matches("input, select, textarea")) return;
+  if (!KB.typing || e.repeat || e.ctrlKey || e.metaKey || e.altKey || typingIn(e.target)) return;
   const k = e.key.toLowerCase();
   if (k === "z" || k === "x") {
     KB.oct = Math.max(0, Math.min(7, KB.oct + (k === "z" ? -1 : 1)));
@@ -726,7 +726,7 @@ function jumpMarker(dir) {
   if (t) seek(t.beat);
 }
 document.addEventListener("keydown", (e) => {
-  if (S.view !== "project" || e.target.matches("input, select, textarea")) return;
+  if (S.view !== "project" || typingIn(e.target)) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "m") {
     e.preventDefault();
     addMarker(S.playBeat);

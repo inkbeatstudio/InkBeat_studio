@@ -1074,7 +1074,7 @@ async function saveTake(tk, btn) {
   }
 }
 document.addEventListener("keydown", (e) => {
-  if (S.view !== "project" || e.target.matches("input, select, textarea") || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (S.view !== "project" || typingIn(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key.toLowerCase() === "r" && REC.open) {
     e.preventDefault();
     e.stopImmediatePropagation();

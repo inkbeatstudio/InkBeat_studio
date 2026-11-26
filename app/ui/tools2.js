@@ -153,7 +153,7 @@ drawTop = function() {
     play.after(b);
   }
   document.addEventListener("keydown", (e) => {
-    if (S.view !== "project" || e.target.matches("input, select, textarea") || e.ctrlKey || e.metaKey || e.altKey || KB.typing) return;
+    if (S.view !== "project" || typingIn(e.target) || e.ctrlKey || e.metaKey || e.altKey || KB.typing) return;
     if (e.key.toLowerCase() === "l") {
       e.preventDefault();
       toggleLoop();
