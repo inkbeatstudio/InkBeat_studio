@@ -13,3 +13,4 @@ pedalboard>=0.9
 certifi
 imageio-ffmpeg>=0.5
 pillow>=9
+marisa-trie>=1.1

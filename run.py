@@ -131,11 +131,38 @@ class DesktopApi:
         base = getattr(self, "_base", "")
         if not base:
             return False
+        url = base + str(path).lstrip("/")
+        common = dict(background_color="#0c0d11", zoomable=True)
         try:
-            webview.create_window(str(title), base + str(path).lstrip("/"), width=1100, height=700, background_color="#0c0d11", zoomable=True)
+            screens = list(getattr(webview, "screens", []) or [])
+        except Exception:
+            screens = []
+        other = screens[1] if len(screens) > 1 else None
+        tries = []
+        if other is not None:
+            tries.append(dict(screen=other, fullscreen=True))
+            sx, sy = getattr(other, "x", None), getattr(other, "y", None)
+            if sx is not None and sy is not None:
+                tries.append(dict(x=int(sx) + 40, y=int(sy) + 40, width=max(800, int(other.width) - 80),
+                                  height=max(600, int(other.height) - 80)))
+        tries.append(dict(width=1100, height=700))
+        for i, extra in enumerate(tries):
+            try:
+                self._second = webview.create_window(str(title), url, js_api=self, **common, **extra)
+                return "second" if other is not None and i < len(tries) - 1 else "one"
+            except Exception as e:
+                log_line("second window attempt failed: " + repr(e))
+        return False
+
+    def close_second(self):
+        w = getattr(self, "_second", None)
+        self._second = None
+        if w is None:
+            return False
+        try:
+            w.destroy()
             return True
-        except Exception as e:
-            log_line("second window failed: " + repr(e))
+        except Exception:
             return False
 
     def open_audio(self, multiple=True):

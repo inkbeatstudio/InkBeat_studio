@@ -18,6 +18,46 @@ notices to be distributed together with the program.
    soundfile (BSD), ONNX Runtime (MIT), PyTorch (BSD) — installed as Python packages
    under their own licences.
 
+4. ukrainian-word-stress (Ukrainian word stress dictionary)
+   Copyright (c) 2022 lang-uk. MIT License.
+   Files: app/engine/data/stress.trie (dictionary data, unmodified).
+   marisa-trie (MIT) — installed as a Python package.
+
+   Permission is hereby granted, free of charge, to any person obtaining a copy
+   of this software and associated documentation files (the "Software"), to deal
+   in the Software without restriction, including without limitation the rights
+   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   copies of the Software, and to permit persons to whom the Software is
+   furnished to do so, subject to the following conditions:
+
+   The above copyright notice and this permission notice shall be included in all
+   copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+
+5. GeneralUser GS (General MIDI SoundFont bank)
+   Copyright S. Christian Collins. Free to use for music creation, private or
+   commercial, and to include in software projects.
+   Files: app/content/GeneralUser-GS.sf2 (unmodified),
+          app/content/GeneralUser-GS-LICENSE.txt (full licence text).
+   https://www.schristiancollins.com
+
+6. Downloadable instrument packs (fetched by the user from their original
+   repositories on GitHub; not distributed with InkBeat):
+   Salamander Grand Piano — Alexander Holm, CC BY 3.0
+   Splendid Grand Piano — AKAI, public domain
+   Weresax, Big Little Bass, Black And Blue Basses — Karoryfer Samples, CC0
+   Discord SFZ GM Bank instruments — Versilian Studios, Jeff Learman,
+     Greg Sullivan and other contributors, CC0
+   VSCO 2 Community Edition — Versilian Studios, CC0
+   Sonic Pi samples — freesound.org contributors and Arovane (Uwe Zahn), CC0
+
 -------------------------------------------------------------------------------
 Apache License 2.0 and NOTICE for Basic Pitch:
 -------------------------------------------------------------------------------
