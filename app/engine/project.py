@@ -15,7 +15,7 @@ from . import cleanup, drums, harmony, midi_export, rhythm, samples, separation,
 from .jsonio import read_json, write_json
 from .transcribe import Note, Transcriber
 
-VERSION = "2.8.0"
+VERSION = "3.1.0"
 ANALYSIS_SR = 22050
 
 GRIDS = {"off": 0, "1/4": 1.0, "1/8": 0.5, "1/16": 0.25, "1/32": 0.125, "1/8T": 1 / 3, "1/16T": 1 / 6}
@@ -902,14 +902,15 @@ def export(pid: str, options: dict | None = None) -> dict:
         for i, t in enumerate(ed):
             ch = 9 if t.get("is_drums") else mel_ch[i % len(mel_ch)]
             notes = [tuple(n) for n in t["notes"]]
-            cc, eb = t.get("cc"), b["end_beat"]
+            cc, eb, lyr = t.get("cc"), b["end_beat"], t.get("lyrics")
             if econd is not cond:
                 notes, cc, eb = midi_export.remap_notes(notes, cc, eb, segs, base)
-            trk = midi_export.note_track(t["name"], notes, ch, None if t.get("is_drums") else t.get("program"), eb, cc)
+                lyr = midi_export.remap_lyrics(lyr, segs, base)
+            trk = midi_export.note_track(t["name"], notes, ch, None if t.get("is_drums") else t.get("program"), eb, cc, lyr)
             etracks.append(trk)
             midi_export.write(out / "MIDI (edited arrangement)" / f"{i + 1:02d} {slugify(t['name'])}.mid",
                               [econd(), midi_export.note_track(t["name"], notes, ch,
-                                                               None if t.get("is_drums") else t.get("program"), eb, cc)])
+                                                               None if t.get("is_drums") else t.get("program"), eb, cc, lyr)])
         midi_export.write(out / f"{slugify(p['title'])} - edited arrangement.mid", etracks)
 
     kit = get_kit(pid)

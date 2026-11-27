@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<title>InkBeat — друге вікно</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+html, body { margin: 0; height: 100%; background: #0c0d11; color: #e9ebf1; font-family: "Segoe UI", Arial, sans-serif; overflow: hidden; }
+.wrap { display: grid; grid-template-rows: auto 1fr auto; height: 100%; padding: 3vh 4vw; box-sizing: border-box; gap: 2vh; }
+.top { display: flex; align-items: baseline; gap: 3vw; font-size: 2.4vh; color: #8b91a3; }
+.top b { color: #e9ebf1; font-size: 3vh; }
+.sec { color: #ffb547; font-weight: 700; }
+.mid { display: flex; align-items: center; justify-content: center; gap: 6vw; }
+.chord { font-size: 26vh; font-weight: 800; line-height: 1; color: #ffb547; text-shadow: 0 0 6vh rgba(255,181,71,.25); }
+.nextc { font-size: 9vh; color: #6b7280; font-weight: 700; }
+.nextc small { display: block; font-size: 2.2vh; letter-spacing: .1em; text-transform: uppercase; }
+.pos { font-size: 7vh; font-variant-numeric: tabular-nums; color: #4fd1c5; font-weight: 700; }
+.beats { display: flex; gap: 1vw; justify-content: center; margin-top: 1vh; }
+.beats i { width: 3vh; height: 3vh; border-radius: 50%; background: #1f232c; }
+.beats i.on { background: #4fd1c5; box-shadow: 0 0 2vh #4fd1c5; }
+.lyr { text-align: center; }
+.line { font-size: 6vh; font-weight: 700; min-height: 7vh; }
+.next { font-size: 3.6vh; color: #6b7280; min-height: 4.5vh; }
+.idle { position: fixed; inset: auto 0 1vh 0; text-align: center; color: #4b5262; font-size: 1.8vh; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><b id="title">InkBeat</b><span id="key"></span><span id="bpm"></span><span class="sec" id="sec"></span></div>
+  <div class="mid">
+    <div><div class="pos" id="pos">1.1</div><div class="beats" id="beats"></div></div>
+    <div class="chord" id="chord">—</div>
+    <div class="nextc"><small id="nlab">далі</small><span id="next"></span></div>
+  </div>
+  <div class="lyr"><div class="line" id="line"></div><div class="next" id="nline"></div></div>
+</div>
+<div class="idle" id="idle">Чекаю на програму… Почніть відтворення в головному вікні.</div>
+<script>
+"use strict";
+let last = 0, bc = null;
+const $ = (id) => document.getElementById(id);
+const EN = localStorage.getItem("inkbeat.lang") === "en";
+if (EN) { document.title = "InkBeat — second window"; $("nlab").textContent = "next"; $("idle").textContent = "Waiting for the app… Start playback in the main window."; }
+function show(s) {
+  last = Date.now();
+  $("idle").style.display = "none";
+  $("title").textContent = s.title || "InkBeat";
+  $("key").textContent = s.key || "";
+  $("bpm").textContent = s.bpm ? s.bpm + " BPM" : "";
+  $("sec").textContent = s.section || "";
+  $("pos").textContent = `${s.bar}.${s.beat}`;
+  $("chord").textContent = s.chord || "—";
+  $("next").textContent = s.next || "";
+  $("line").textContent = s.line || "";
+  $("nline").textContent = s.nextLine || "";
+  const b = $("beats"), n = Math.max(2, Math.min(12, s.bpb || 4));
+  if (b.children.length !== n) b.innerHTML = "<i></i>".repeat(n);
+  [...b.children].forEach((x, i) => x.classList.toggle("on", s.playing && i === s.beat - 1));
+}
+if ("BroadcastChannel" in window) { bc = new BroadcastChannel("inkbeat-live"); bc.onmessage = (e) => show(e.data); }
+setInterval(async () => {
+  if (Date.now() - last < 400) return;
+  try { const r = await fetch("/api/live/state", { cache: "no-store" }); const s = await r.json(); if (s && s.title && Date.now() / 1000 - s.t < 5) show(s); } catch (e) {}
+}, 200);
+</script>
+</body>
+</html>

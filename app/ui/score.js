@@ -78,7 +78,10 @@ function scMusicXML(ids, fromBar, toBar) {
   parts.forEach((t, i) => {
     const clef = scClef(t), ms = scMeasures(t, fromBar, toBar);
     x += `  <part id="P${i + 1}">\n`;
+    const syl = (S.mix.syl && S.mix.syl[t.id] || []).map(([b2, tx]) => [tmM(b2), tx]);
+    let prevHy = false;
     ms.forEach((evs, mi) => {
+      let p16 = 0;
       x += `    <measure number="${fromBar + mi}">\n`;
       if (mi === 0) {
         x += `      <attributes><divisions>4</divisions><key><fifths>${fifths}</fifths></key><time><beats>${bpb}</beats><beat-type>4</beat-type></time><clef><sign>${clef === "bass" ? "F" : "G"}</sign><line>${clef === "bass" ? 4 : 2}</line></clef></attributes>\n`;
@@ -86,12 +89,21 @@ function scMusicXML(ids, fromBar, toBar) {
       }
       for (const e of evs) {
         const dot = e.dot ? "<dot/>" : "";
+        const mBeat = (fromBar - 1 + mi) * bpb + p16 / 4;
+        p16 += e.len;
         if (!e.ps) { x += `      <note><rest/><duration>${e.len}</duration><type>${XML_TYPE[e.type]}</type>${dot}</note>\n`; continue; }
+        const sy = !e.tieStop && syl.find((q) => Math.abs(q[0] - mBeat) < 0.13);
+        let lyr = "";
+        if (sy) {
+          const hy = /-$/.test(sy[1]), txt = sy[1].replace(/-$/, "");
+          lyr = `<lyric number="1"><syllabic>${hy ? (prevHy ? "middle" : "begin") : prevHy ? "end" : "single"}</syllabic><text>${esc(txt)}</text></lyric>`;
+          prevHy = hy;
+        }
         e.ps.forEach((p, k) => {
           const sp = scSpell(p, fifths);
           const ties = (e.tieStop ? '<tie type="stop"/>' : "") + (e.tieStart ? '<tie type="start"/>' : "");
           const tied = (e.tieStop ? '<tied type="stop"/>' : "") + (e.tieStart ? '<tied type="start"/>' : "");
-          x += `      <note>${k ? "<chord/>" : ""}<pitch><step>${sp.step}</step>${sp.alter ? `<alter>${sp.alter}</alter>` : ""}<octave>${sp.octave}</octave></pitch><duration>${e.len}</duration>${ties}<type>${XML_TYPE[e.type]}</type>${dot}${tied ? `<notations>${tied}</notations>` : ""}</note>\n`;
+          x += `      <note>${k ? "<chord/>" : ""}<pitch><step>${sp.step}</step>${sp.alter ? `<alter>${sp.alter}</alter>` : ""}<octave>${sp.octave}</octave></pitch><duration>${e.len}</duration>${ties}<type>${XML_TYPE[e.type]}</type>${dot}${tied ? `<notations>${tied}</notations>` : ""}${k === 0 ? lyr : ""}</note>\n`;
         });
       }
       x += "    </measure>\n";
@@ -151,7 +163,11 @@ function scRenderVF(el, ids, fromBar, toBar) {
         if (k === 0) st.setMeasure(fromBar + mi);
         st.setContext(ctx).draw();
         const evs = d.ms[mi] || [];
+        const syl = (S.mix.syl && S.mix.syl[d.t.id] || []).map(([b2, tx]) => [tmM(b2), tx]);
+        let p16 = 0;
         const notes = evs.map((e) => {
+          const mBeat = (fromBar - 1 + mi) * bpb + p16 / 4;
+          p16 += e.len;
           const keys = e.ps ? e.ps.map((p) => { const sp = scSpell(p, fifths); return `${sp.step.toLowerCase()}${sp.alter > 0 ? "#" : sp.alter < 0 ? "b" : ""}/${sp.octave}`; }) : [d.clef === "bass" ? "d/3" : "b/4"];
           const sn = new VF.StaveNote({ keys, duration: e.type + (e.dot ? "d" : "") + (e.ps ? "" : "r"), clef: d.clef, auto_stem: true });
           if (e.dot) VF.Dot.buildAndAttach([sn], { all: true });
@@ -159,6 +175,8 @@ function scRenderVF(el, ids, fromBar, toBar) {
             const sp = scSpell(p, fifths), want = sp.alter, sig = sigAlter.get(sp.step) || 0;
             if (want !== sig) sn.addModifier(new VF.Accidental(want > 0 ? "#" : want < 0 ? "b" : "n"), i);
           });
+          const sy = e.ps && !e.tieStop && syl.find((q) => Math.abs(q[0] - mBeat) < 0.13);
+          if (sy) sn.addModifier(new VF.Annotation(sy[1]).setVerticalJustification(VF.Annotation.VerticalJustify.BOTTOM).setFont("Arial", 10), 0);
           sn._ev = e;
           return sn;
         });

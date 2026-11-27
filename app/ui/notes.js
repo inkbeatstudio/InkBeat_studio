@@ -40,6 +40,11 @@ function renderNotesTab(el, T) {
       <button class="btn ghost sm" id="pr-odown" data-hint="На октаву нижче (Shift+стрілка вниз)">−12</button>
       <button class="btn ghost sm" id="pr-short" data-hint="Видалити дуже короткі ноти (коротші за 1/32)">Прибрати короткі</button>
       <button class="btn ghost sm" id="pr-legato" data-hint="Подовжити виділені ноти до початку наступних">Легато</button>
+      <button class="btn ghost sm ${HM_UI.scaleOn ? "on" : ""}" id="pr-scale" data-hint="Підсвітити ноти гами: світлі рядки — ноти тональності, зеленуватий — тоніка. Гама й лад задаються в «Гармонії»">Гама</button>
+      <button class="btn ghost sm ${HM_UI.lock ? "on" : ""}" id="pr-lock" data-hint="Нові й переміщені ноти стають лише на ноти гами — фальшивих нот не буде">Лише гама</button>
+      <button class="btn ghost sm" id="pr-tf" data-hint="Перетворення виділених нот (або всіх): по гамі вгору/вниз, дзеркально, задом наперед, швидше/повільніше, другий голос, варіація">Перетворити ▾</button>
+      <button class="btn ghost sm" id="pr-mel" data-hint="Скласти мелодію за акордами пісні: ритм, рух, форма, контрмелодія">Мелодія…</button>
+      <button class="btn ghost sm" id="pr-step" data-hint="Покрокове введення: кожна зіграна нота (MIDI-клавіатура або клавіші комп'ютера у вікні «Клавіатура») стає на червону лінію, і лінія рухається на крок сітки. Пробіл — пауза, Backspace — назад">Покроково</button>
       <button class="btn ghost sm" id="pr-del" data-hint="Видалити виділені ноти (Delete)">Видалити</button>
       <select id="pr-lane" data-hint="Що показує нижня смуга: гучність нот, педаль сустейну, модуляція чи pitch bend">${Object.entries(CC_LANES).map(([k, v]) => `<option value="${k}" ${PR.lane === k ? "selected" : ""}>${v[0]}</option>`).join("")}</select>
       ${PR.lane !== "vel" ? `<button class="btn ghost sm" id="pr-ccclr" data-hint="Прибрати всю лінію «${CC_LANES[PR.lane][0]}» з цієї доріжки">Очистити лінію</button>` : ""}
@@ -64,6 +69,7 @@ function renderNotesTab(el, T) {
   const xb = (x) => PR.x0 + (x - KB) / PR.ppb;
   const py = (p) => RUL + (PR.top - p) * PR.rowH;
   const yp = (y) => Math.round(PR.top - (y - RUL) / PR.rowH + 0.5 - 0.5);
+  const ypl = (y) => hmLockP(yp(y), drums);
   const snapv = (b, alt) => !PR.snap || alt ? b : tmU(Math.round(tmM(b) / PR.snap) * PR.snap);
   function info() {
     const el = $("#pr-info"); if (!el) return;
@@ -79,7 +85,7 @@ function renderNotesTab(el, T) {
     for (let r = 0; r < rows; r++) {
       const p = PR.top - r, y = RUL + r * PR.rowH;
       const black = [1, 3, 6, 8, 10].includes(((p % 12) + 12) % 12);
-      c.fillStyle = black ? "#121419" : "#16181e"; c.fillRect(KB, y, w - KB, PR.rowH);
+      c.fillStyle = hmRowColor(p, black, drums); c.fillRect(KB, y, w - KB, PR.rowH);
       if (((p % 12) + 12) % 12 === 0) { c.fillStyle = "#262a34"; c.fillRect(KB, y + PR.rowH - 1, w - KB, 1); }
     }
     const bpb = S.B.timing.bpb, b0 = PR.x0, b1 = xb(w);
@@ -91,6 +97,7 @@ function renderNotesTab(el, T) {
     }
     c.fillStyle = "#0a0b0e"; c.fillRect(0, 0, w, RUL); c.fillRect(0, RUL + gh, w, 1);
     for (const s of secList()) { const x0 = bx(s.start), x1 = bx(s.end); if (x1 < KB || x0 > w) continue; c.fillStyle = s.color + "55"; c.fillRect(Math.max(KB, x0), 0, x1 - Math.max(KB, x0), 3); }
+    if (!drums) hmPaintRollChords(c, bx, w, KB, RUL + 1);
     const ns = notes(), col = t.color;
     ns.forEach((n, i) => {
       const x = bx(n[0]), ww = Math.max(3, n[1] * PR.ppb - 1), y = py(n[2]);
@@ -102,6 +109,7 @@ function renderNotesTab(el, T) {
       if (sel) { c.strokeStyle = "#fff"; c.strokeRect(Math.max(KB, x) + 0.5, y + 1.5, ww - Math.max(0, KB - x) - 1, PR.rowH - 3); }
       if (lane === "vel") { const vx = Math.max(KB, x), vh = (n[3] / 127) * (VEL - 8); c.fillStyle = sel ? "#ffb547" : col; c.fillRect(vx, RUL + gh + VEL - 3 - vh, 3, vh); }
     });
+    if (typeof prExtra === "function") prExtra(c, t, { bx, py, KB, RUL, w, gh, ns });
     if (lane !== "vel") {
       const y0 = RUL + gh + 4, H = VEL - 8, ev = ccEv(false) || [];
       const vy = (v) => lane === "pb" ? y0 + H / 2 - v * H / 2 : y0 + H - v * H;
@@ -218,7 +226,7 @@ function renderNotesTab(el, T) {
         for (const s0 of start) {
           const n = ns[s0.i];
           if (drag.kind === "len") n[1] = Math.max(PR.snap && !ev.altKey ? PR.snap : 0.03, snapv(s0.n[0] + s0.n[1] + db, ev.altKey) - s0.n[0]);
-          else { n[0] = Math.max(0, snapv(s0.n[0] + db, ev.altKey)); n[2] = Math.max(0, Math.min(127, s0.n[2] + (drums && false ? 0 : dp))); }
+          else { n[0] = Math.max(0, snapv(s0.n[0] + db, ev.altKey)); n[2] = hmLockP(Math.max(0, Math.min(127, s0.n[2] + dp)), drums); }
         }
         if (drag.kind === "move" && dp !== lastP) { lastP = dp; audit(ns[h.i][2], 0.6); }
         PR.lastLen = ns[h.i][1];
@@ -230,7 +238,7 @@ function renderNotesTab(el, T) {
     }
     if (PR.tool === "draw") {
       commitUndo("нова нота");
-      const ns = editableNotes(t), b = Math.max(0, snapv(xb(x), e.altKey)), p = yp(y);
+      const ns = editableNotes(t), b = Math.max(0, snapv(xb(x), e.altKey)), p = ypl(y);
       const n = [b, drums ? 0.25 : PR.lastLen || PR.snap || 0.5, p, 100];
       ns.push(n);
       PR.sel = new Set([ns.length - 1]);
@@ -301,6 +309,7 @@ function renderNotesTab(el, T) {
   $("#pr-lane").onchange = (e) => { PR.lane = e.target.value; renderDock(); };
   const clr = $("#pr-ccclr");
   if (clr) clr.onclick = () => { const m = mt(t.id); if (!m.cc || !m.cc[lane]) return; commitUndo("очистити лінію"); delete m.cc[lane]; saveMix(); paint(); };
+  hmRollBind(t, { paint });
   $("#pr-q").onclick = () => {
     const ns = editableNotes(t), idx = PR.sel.size ? [...PR.sel] : ns.map((_, i) => i), g = PR.snap || 0.25;
     commitUndo("квантизація нот");

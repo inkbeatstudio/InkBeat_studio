@@ -41,6 +41,10 @@ def to_musical(segs: list, base: float, u: float) -> float:
     return s[1] + (u - s[0]) * s[2] / base
 
 
+def remap_lyrics(lyr, segs, base):
+    return [[to_musical(segs, base, float(b)), t] for b, t in lyr or []]
+
+
 def remap_notes(notes, cc, end_beat, segs, base):
     f = lambda u: to_musical(segs, base, u)
     out = [(f(n[0]), max(1e-3, f(n[0] + n[1]) - f(n[0])), n[2], n[3]) for n in notes]
@@ -76,7 +80,7 @@ def conductor(bpm: float, beats_per_bar: int, key: dict | None, markers: list[tu
 
 
 def note_track(name: str, notes: list[tuple[float, float, int, int]], channel: int, program: int | None,
-               end_beat: float | None = None, cc: dict | None = None) -> mido.MidiTrack:
+               end_beat: float | None = None, cc: dict | None = None, lyrics: list | None = None) -> mido.MidiTrack:
     tr = mido.MidiTrack()
     tr.append(mido.MetaMessage("track_name", name=_ascii(name), time=0))
     if program is not None and channel != 9:
@@ -95,10 +99,14 @@ def note_track(name: str, notes: list[tuple[float, float, int, int]], channel: i
                 ev.append((t, -1, "pb", int(max(-8192, min(8191, round(float(val) * 8191))))))
             elif str(k).isdigit():
                 ev.append((t, -1, int(k), int(max(0, min(127, round(float(val) * 127))))))
+    for bt, txt in lyrics or []:
+        ev.append((max(0, int(round(float(bt) * PPQ))), 0.5, "lyr", str(txt)[:40]))
     ev.sort(key=lambda e: (e[0], e[1]))
     last = 0
     for t, on, p, v in ev:
-        if on == -1:
+        if on == 0.5:
+            tr.append(mido.MetaMessage("lyrics", text=v, time=t - last))
+        elif on == -1:
             if p == "pb":
                 tr.append(mido.Message("pitchwheel", pitch=v, channel=channel, time=t - last))
             else:
@@ -115,7 +123,7 @@ def note_track(name: str, notes: list[tuple[float, float, int, int]], channel: i
 
 
 def write(path: Path, tracks: list[mido.MidiTrack]):
-    mf = mido.MidiFile(type=1, ticks_per_beat=PPQ)
+    mf = mido.MidiFile(type=1, ticks_per_beat=PPQ, charset="utf-8")
     mf.tracks.extend(tracks)
     path.parent.mkdir(parents=True, exist_ok=True)
     mf.save(str(path))

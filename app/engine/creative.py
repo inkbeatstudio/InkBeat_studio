@@ -262,3 +262,83 @@ def slice_audio(y: np.ndarray, sr: int, out_dir, rel_base: str, sensitivity: flo
         if progress:
             progress((i + 1) / len(clean))
     return slices
+
+
+def tempo_warp(y: np.ndarray, sr: int, segs: list, progress=None):
+    y = np.atleast_2d(y)
+    n = y.shape[1]
+    cuts = []
+    for i, (a, b, r) in enumerate(segs):
+        s0 = 0 if i == 0 else int(max(0, min(n, round(float(a) * sr))))
+        s1 = n if i == len(segs) - 1 else int(max(0, min(n, round(float(b) * sr))))
+        if s1 > s0:
+            cuts.append((s0, s1, float(r)))
+    out, fade, tail = [], int(0.008 * sr), None
+    for k, (s0, s1, r) in enumerate(cuts):
+        piece = y[:, max(0, s0 - fade):min(n, s1 + 4 * fade)]
+        z = piece if abs(r - 1) < 1e-4 else _stretch_hq(piece, sr, 1.0 / r)
+        lead = int(round((s0 - max(0, s0 - fade)) / r))
+        want = int(round((s1 - s0) / r))
+        full = z[:, lead:]
+        z = full[:, :want].copy()
+        if z.shape[1] < want:
+            z = np.pad(z, ((0, 0), (0, want - z.shape[1])))
+        if tail is not None and fade and z.shape[1] > fade and tail.shape[1] >= fade:
+            w = np.linspace(0, 1, fade, dtype=np.float32)
+            z[:, :fade] = z[:, :fade] * w + tail[:, :fade] * (1 - w)
+        tail = full[:, want:want + fade]
+        out.append(z.astype(np.float32))
+        if progress:
+            progress((k + 1) / len(cuts))
+    res = np.concatenate(out, axis=1) if out else y
+    return res, {"segments": len(cuts), "length_s": round(res.shape[1] / sr, 2)}
+
+
+def harmonize_voice(y: np.ndarray, sr: int, notes: list, keep_gaps: bool = False, progress=None):
+    y = np.atleast_2d(y)
+    n = y.shape[1]
+    out = np.zeros_like(y) if not keep_gaps else y.copy()
+    fade = int(0.012 * sr)
+    segs = sorted((float(a), float(b), float(s)) for a, b, s in notes if float(b) > float(a))
+    merged = []
+    for a, b, st in segs:
+        if merged and abs(merged[-1][2] - st) < 1e-3 and a - merged[-1][1] < 0.06:
+            merged[-1][1] = b
+        else:
+            merged.append([a, b, st])
+    for k, (a, b, st) in enumerate(merged):
+        s0, s1 = max(0, int(a * sr) - fade), min(n, int(b * sr) + fade)
+        if s1 - s0 < fade * 3:
+            continue
+        piece = y[:, s0:s1]
+        z = _stretch_hq(piece, sr, 1.0, st) if abs(st) > 1e-3 else piece.copy()
+        z = z[:, : s1 - s0]
+        if z.shape[1] < s1 - s0:
+            z = np.pad(z, ((0, 0), (0, s1 - s0 - z.shape[1])))
+        env = np.ones(s1 - s0, dtype=np.float32)
+        env[:fade] = np.linspace(0, 1, fade)
+        env[-fade:] = np.linspace(1, 0, fade)
+        out[:, s0:s1] = out[:, s0:s1] * (1 - env) + z * env
+        if progress:
+            progress((k + 1) / max(1, len(merged)))
+    return out.astype(np.float32), {"segments": len(merged)}
+
+
+def estimate_key(y: np.ndarray, sr: int):
+    import librosa
+
+    mono = np.atleast_2d(y).mean(axis=0)[: sr * 30]
+    if len(mono) < sr // 2:
+        return None
+    ch = librosa.feature.chroma_cqt(y=mono, sr=sr).mean(axis=1)
+    if ch.sum() <= 0:
+        return None
+    maj = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+    mnr = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
+    best = (-9, 0, "major")
+    for t in range(12):
+        for prof, mode in ((maj, "major"), (mnr, "minor")):
+            c = float(np.corrcoef(np.roll(prof, t), ch)[0, 1])
+            if c > best[0]:
+                best = (c, t, mode)
+    return {"tonic": best[1], "mode": best[2], "conf": round(best[0], 3)}

@@ -553,6 +553,183 @@ def project_to_notes(pid):
     return jsonify({"job": jid})
 
 
+PHONE: dict = {"srv": None, "token": None, "port": None, "ip": None}
+PHONE_PAGE = (Path(__file__).parent / "ui" / "phone.html")
+
+
+def _phone_dir() -> Path:
+    d = P.workspace() / "_phone_inbox"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _lan_ip() -> str:
+    import socket
+
+    s2 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s2.connect(("10.255.255.255", 1))
+        return s2.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+    finally:
+        s2.close()
+
+
+def _phone_app():
+    import json as _json
+    import secrets
+
+    from flask import Flask, Response
+
+    papp = Flask("inkbeat_phone")
+    papp.config["MAX_CONTENT_LENGTH"] = 80 * 1024 * 1024
+
+    def ok():
+        return request.args.get("k") and secrets.compare_digest(str(request.args.get("k")), str(PHONE["token"]))
+
+    @papp.get("/")
+    def ph_index():
+        if not ok():
+            return Response("InkBeat: open the address with the code shown in the app.", status=403, mimetype="text/plain; charset=utf-8")
+        return Response(PHONE_PAGE.read_text(encoding="utf-8"), mimetype="text/html; charset=utf-8")
+
+    @papp.post("/up")
+    def ph_up():
+        if not ok():
+            abort(403)
+        iid = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4]
+        meta = {"id": iid, "name": (request.form.get("name") or "").strip()[:60], "text": (request.form.get("text") or "")[:4000], "kind": request.form.get("kind", "idea"), "time": time.time(), "file": None}
+        f = request.files.get("file")
+        if f and f.filename:
+            ext = Path(f.filename).suffix.lower()
+            if ext not in (".wav", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".webm", ".3gp", ".amr", ".flac", ".caf", ".mp4"):
+                ext = ".m4a"
+            dest = _phone_dir() / (iid + ext)
+            f.save(dest)
+            meta["file"] = dest.name
+        (_phone_dir() / (iid + ".json")).write_text(_json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True})
+
+    return papp
+
+
+@app.post("/api/phone/start")
+def phone_start():
+    import secrets
+
+    from werkzeug.serving import make_server
+
+    if not PHONE["srv"]:
+        last = None
+        for port in range(47900, 47920):
+            try:
+                srv = make_server("0.0.0.0", port, _phone_app(), threaded=True)
+                break
+            except OSError as e:
+                last = e
+        else:
+            return jsonify({"error": _friendly(last)}), 500
+        PHONE.update(srv=srv, port=port, token=secrets.token_urlsafe(5), ip=_lan_ip())
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return jsonify({"url": f"http://{PHONE['ip']}:{PHONE['port']}/?k={PHONE['token']}", "ip": PHONE["ip"], "port": PHONE["port"], "token": PHONE["token"]})
+
+
+@app.post("/api/phone/stop")
+def phone_stop():
+    if PHONE["srv"]:
+        threading.Thread(target=PHONE["srv"].shutdown, daemon=True).start()
+    PHONE.update(srv=None, token=None, port=None)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/phone/inbox")
+def phone_inbox():
+    import json as _json
+
+    out = []
+    for f in sorted(_phone_dir().glob("*.json"), reverse=True):
+        try:
+            out.append(_json.loads(f.read_text(encoding="utf-8")))
+        except Exception:
+            pass
+    return jsonify({"items": out, "on": bool(PHONE["srv"])})
+
+
+@app.get("/api/phone/file/<name>")
+def phone_file(name):
+    f = (_phone_dir() / Path(name).name)
+    if not f.exists():
+        abort(404)
+    return send_file(f, max_age=0)
+
+
+@app.post("/api/phone/delete/<iid>")
+def phone_delete(iid):
+    for f in _phone_dir().glob(Path(iid).name + "*"):
+        f.unlink(missing_ok=True)
+    return jsonify({"ok": True})
+
+
+LIVE_STATE: dict = {"t": 0}
+
+
+@app.post("/api/live/state")
+def live_state_set():
+    LIVE_STATE.clear()
+    LIVE_STATE.update(request.get_json(force=True) or {})
+    LIVE_STATE["t"] = time.time()
+    return jsonify({"ok": True})
+
+
+@app.get("/api/live/state")
+def live_state_get():
+    return jsonify(LIVE_STATE)
+
+
+@app.post("/api/album/status")
+def album_status():
+    from .engine import album as AL
+
+    return jsonify(AL.status((request.get_json(force=True) or {}).get("pids") or []))
+
+
+@app.post("/api/album/build")
+def album_build():
+    from .engine import album as AL
+
+    data = request.get_json(force=True) or {}
+    jid = uuid.uuid4().hex[:10]
+    job = {"id": jid, "status": "running", "progress": 0.0, "result": None, "error": None}
+    PROC_JOBS[jid] = job
+
+    def work():
+        try:
+            job["result"] = AL.build(data.get("pids") or [], data, progress=lambda x: job.__setitem__("progress", float(x)))
+            job["status"] = "done"
+        except Exception as e:
+            job["status"] = "error"
+            job["error"] = _friendly(e)
+            job["trace"] = traceback.format_exc()[-1500:]
+
+    threading.Thread(target=work, daemon=True).start()
+    return jsonify({"job": jid})
+
+
+@app.post("/api/album/open")
+def album_open():
+    d = P.workspace() / "_albums"
+    p = Path(str((request.get_json(force=True) or {}).get("path") or ""))
+    try:
+        p = p.resolve()
+        if d.resolve() not in p.parents and p != d.resolve():
+            abort(403)
+    except Exception:
+        abort(400)
+    _open_folder(p if p.is_dir() else p.parent)
+    return jsonify({"ok": True})
+
+
 @app.get("/api/process/<jid>")
 def process_status(jid):
     j = PROC_JOBS.get(jid)
@@ -775,6 +952,27 @@ def library_sample_add():
     return jsonify({"added": out, "errors": errs, "library": X.library()})
 
 
+@app.post("/api/library/analyze")
+def library_analyze():
+    try:
+        return jsonify(X.analyze_library())
+    except Exception as e:
+        return jsonify({"error": _friendly(e)}), 500
+
+
+@app.get("/api/library/fit")
+def library_fit():
+    import io
+
+    try:
+        data = X.fit_sample(request.args.get("f", ""), float(request.args.get("factor", 1) or 1), float(request.args.get("semis", 0) or 0))
+    except FileNotFoundError:
+        abort(404)
+    except Exception as e:
+        return jsonify({"error": _friendly(e)}), 500
+    return send_file(io.BytesIO(data), mimetype="audio/wav", max_age=0)
+
+
 @app.get("/api/library/sample/<path:name>")
 def library_sample_get(name):
     f = X.sample_path("lib:" + Path(name).name)
@@ -792,7 +990,7 @@ def library_sample_del(name):
 @app.post("/api/library/preset")
 def library_preset_save():
     j = request.get_json(force=True)
-    if not (j.get("name") or "").strip() or j.get("kind") not in ("synth", "fx", "chain"):
+    if not (j.get("name") or "").strip() or j.get("kind") not in ("synth", "fx", "chain", "template"):
         return jsonify({"error": "Потрібна назва пресету."}), 400
     X.save_preset(j["kind"], j["name"], j.get("data"))
     return jsonify(X.library())

@@ -125,6 +125,19 @@ class DesktopApi:
             return []
         return [str(x) for x in (r if isinstance(r, (list, tuple)) else [r])]
 
+    def open_window(self, path="ui/second.html", title="InkBeat"):
+        import webview
+
+        base = getattr(self, "_base", "")
+        if not base:
+            return False
+        try:
+            webview.create_window(str(title), base + str(path).lstrip("/"), width=1100, height=700, background_color="#0c0d11", zoomable=True)
+            return True
+        except Exception as e:
+            log_line("second window failed: " + repr(e))
+            return False
+
     def open_audio(self, multiple=True):
         return self._dialog("OPEN", bool(multiple), ("Аудіо (*.wav;*.mp3;*.flac;*.ogg;*.m4a;*.aif;*.aiff;*.opus)", "Усі файли (*.*)"))
 
@@ -330,6 +343,7 @@ def desktop_main():
     win = webview.create_window("InkBeat", html=SPLASH, js_api=api, width=1500, height=920, min_size=(1100, 680),
                                 background_color="#0c0d11", maximized=True, zoomable=True)
     api._window = win
+    api._base = url
 
     def show(p, text):
         try:

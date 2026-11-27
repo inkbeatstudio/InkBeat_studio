@@ -8,8 +8,10 @@ function openNewProject() {
       <label>Темп, BPM<input type="number" id="np-bpm" min="40" max="260" step="1" value="120"></label>
       <label>Тональність<div style="display:flex;gap:6px"><select id="np-tonic">${keys}</select><select id="np-mode"><option value="minor">мінор</option><option value="major">мажор</option></select></div></label>
       <label>Розмір<div class="np-seg" id="np-bpb">${[4, 3, 6].map((b) => `<button type="button" data-v="${b}" class="${b === NEWP.bpb ? "on" : ""}">${b}/4</button>`).join("")}</div></label>
+      <label class="full" data-hint="Готовий старт у стилі жанру: структура, акорди, барабани, бас, акомпанемент і переходи. Темп і лад підставляються самі, їх можна змінити">Шаблон жанру<select id="np-genre"><option value="">— порожній проєкт —</option>${Object.entries(GENRES).map(([k, g]) => `<option value="${k}">${escapeHtml(g.name)} · ${g.bpm} BPM</option>`).join("")}</select></label>
       <label>Довжина<div class="np-seg" id="np-bars">${[16, 32, 64, 128].map((b) => `<button type="button" data-v="${b}" class="${b === NEWP.bars ? "on" : ""}">${b} тактів</button>`).join("")}</div></label>
     </div>
+    <label class="chk" data-hint="Одразу після створення відкриється конструктор акордів: виберіть прогресію, і програма запише акорди, акомпанемент, бас і барабани"><input type="checkbox" id="np-harm" ${NEWP.harm !== false ? "checked" : ""}> Почати з акордів (відкрити «Гармонію»)</label>
     <p class="muted small">Довжину можна не вгадувати: якщо додати довший аудіофайл, проєкт подовжиться сам. Темп і тональність змінюються потім у панелі «Проєкт».</p>
     <div class="modal-actions"><button class="btn ghost" id="np-cancel">Скасувати</button><button class="btn primary" id="np-go">Створити проєкт</button></div>`);
   $("#np-mode").value = NEWP.mode;
@@ -20,19 +22,24 @@ function openNewProject() {
   seg("#np-bpb", "bpb");
   seg("#np-bars", "bars");
   $("#np-cancel").onclick = () => $("#care-modal").hidden = true;
+  $("#np-genre").onchange = (e) => { const g = GENRES[e.target.value]; if (!g) return; $("#np-bpm").value = g.bpm; $("#np-mode").value = g.mode; $("#np-harm").checked = false; };
   $("#np-title").focus();
   $("#np-title").onkeydown = (e) => { if (e.key === "Enter") $("#np-go").click(); };
   $("#np-go").onclick = async () => {
     const bpm = parseFloat($("#np-bpm").value);
     if (!(bpm >= 40 && bpm <= 260)) return toast("Темп має бути від 40 до 260 BPM.", true);
     NEWP.mode = $("#np-mode").value;
+    NEWP.harm = $("#np-harm").checked;
     $("#np-go").disabled = true;
     $("#np-go").textContent = "Створюю…";
     try {
-      const r = await api.post("/api/projects/new", { title: $("#np-title").value.trim(), bpm, bpb: NEWP.bpb, bars: NEWP.bars, tonic: +$("#np-tonic").value, mode: NEWP.mode });
+      const genre = $("#np-genre").value, gbars = genre ? STRUCTS[GENRES[genre].struct][1].reduce((s, x) => s + x[1], 0) : 0;
+      const r = await api.post("/api/projects/new", { title: $("#np-title").value.trim(), bpm, bpb: NEWP.bpb, bars: genre ? Math.max(gbars, 16) : NEWP.bars, tonic: +$("#np-tonic").value, mode: NEWP.mode });
       $("#care-modal").hidden = true;
       await openProject(r.pid);
       toast("Проєкт створено. Натисніть «+ Додати доріжку» ліворуч.");
+      if (genre) setTimeout(() => applyGenre(genre), 300);
+      else if (NEWP.harm) setTimeout(openHarmony, 300);
     } catch (e) {
       toast("Не вдалося створити проєкт: " + e.message, true);
       $("#np-go").disabled = false;

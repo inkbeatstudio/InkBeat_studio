@@ -1579,7 +1579,7 @@ async function renderDrums(box, T) {
   const drumSmp = kit ? kit.tracks.flatMap((k) => k.samples.filter((s) => s.kind === "drum")) : [];
   S.selPad = S.selPad || "kick";
   box.innerHTML = `<div class="drums">
-    <div><h6>Набір</h6><div class="seg small" id="kit-seg">${[["song", "Удари з пісні"], ["808", "808 (синт)"], ["acoustic", "Акустичний (синт)"]].map(([k, l]) => `<button data-kit="${k}" class="${inst.kit === k ? "active" : ""}">${l}</button>`).join("")}</div>
+    <div><h6>Набір</h6><div class="seg small" id="kit-seg">${DRUM_KITS.map(([k, l]) => `<button data-kit="${k}" class="${inst.kit === k ? "active" : ""}">${l}</button>`).join("")}</div>
       <div class="pads">${Plugins.DRUM_PADS.map(([g, l, n]) => `<button class="pad ${S.selPad === g ? "sel" : ""} ${(inst.pads[g] || {}).mute ? "muted" : ""}" data-pad="${g}" data-n="${n}" data-hint="Клік — послухати і налаштувати пад «${l}»">${l}</button>`).join("")}</div></div>
     <div><h6>Пад: ${escapeHtml((Plugins.DRUM_PADS.find((p) => p[0] === S.selPad) || [])[1] || "")}</h6><div class="ctls mini" id="pad-ctls"></div>
       ${inst.kit === "song" && drumSmp.length ? `<select id="pad-smp" data-hint="Який семпл з пісні грає цей пад"><option value="">авто (найкращий удар)</option>${drumSmp.map((s) => `<option value="${escapeHtml(s.file)}" ${(inst.pads[S.selPad] || {}).sample === s.file ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}</select>` : ""}
@@ -2072,7 +2072,7 @@ function exportExtras() {
   return { daw: { rpp: !!(rpp && rpp.checked), dawproject: !!(dp && dp.checked) }, meta };
 }
 function editedMidi() {
-  return tracksAll().filter((t) => (t.enabled || t.clone) && arranged(t).length && !mt(t.id).mute).map((t) => ({ name: t.name, program: t.program, is_drums: t.is_drums, notes: arranged(t).map((n) => [+n[0].toFixed(5), +n[1].toFixed(5), n[2], n[3]]), cc: mt(t.id).cc || null }));
+  return tracksAll().filter((t) => (t.enabled || t.clone) && arranged(t).length && !mt(t.id).mute).map((t) => ({ name: t.name, program: t.program, is_drums: t.is_drums, notes: arranged(t).map((n) => [+n[0].toFixed(5), +n[1].toFixed(5), n[2], n[3]]), cc: mt(t.id).cc || null, lyrics: S.mix.syl && S.mix.syl[t.id] || null }));
 }
 $("#export-btn").addEventListener("click", () => {
   const modal = $("#export-modal");

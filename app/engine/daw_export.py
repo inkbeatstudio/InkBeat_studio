@@ -133,7 +133,7 @@ def _id3_text(fid: str, text: str) -> bytes:
 
 def id3_tag(meta: dict, cover: Path | None = None) -> bytes:
     frames = b""
-    for k, fid in (("title", "TIT2"), ("artist", "TPE1"), ("album", "TALB"), ("year", "TYER"), ("genre", "TCON"), ("isrc", "TSRC"), ("composer", "TCOM")):
+    for k, fid in (("title", "TIT2"), ("artist", "TPE1"), ("album", "TALB"), ("year", "TYER"), ("genre", "TCON"), ("isrc", "TSRC"), ("composer", "TCOM"), ("track", "TRCK")):
         v = str(meta.get(k) or "").strip()
         if v:
             frames += _id3_text(fid, v)

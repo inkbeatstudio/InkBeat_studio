@@ -174,13 +174,15 @@ function replaceChord(idx, root, kind, melody) {
 
 const GEN = {
   bass: { name: "Басова лінія", role: "bass", color: "#8b5cf6", program: 38, preset: "Синт-бас",
-    styles: { roots: "Корені (довгі ноти)", eighths: "Восьмі (рівний драйв)", octaves: "Октави (диско)", synco: "Синкопа (фанк / поп)", walking: "Walking (джаз)", sub808: "808 (трап)" } },
+    styles: { roots: "Корені (довгі ноти)", eighths: "Восьмі (рівний драйв)", octaves: "Октави (диско)", synco: "Синкопа (фанк / поп)", walking: "Walking (джаз)", sub808: "808 (трап)", slide808: "808 зі слайдами (трап / дрилл)" } },
   drums: { name: "Барабани", role: "drums", color: "#f59e0b", is_drums: true,
-    styles: { pop: "Поп 4/4", hiphop: "Хіп-хоп (бум-бап)", trap: "Трап", house: "Хаус", rock: "Рок", lofi: "Лоу-фай", reggaeton: "Регетон", halftime: "Половинний темп" } },
+    styles: { pop: "Поп 4/4", hiphop: "Хіп-хоп (бум-бап)", trap: "Трап", house: "Хаус", rock: "Рок", lofi: "Лоу-фай", reggaeton: "Регетон", halftime: "Половинний темп", drill: "Дрилл", phonk: "Фонк", afro: "Афробіт", dnb: "Драм-н-бейс / брейкбіт", funk: "Фанк", disco: "Диско", shuffle: "Шафл (блюз)" } },
   arp: { name: "Арпеджіо", role: "poly", color: "#06b6d4", program: 81, preset: "Плак",
     styles: { up: "Вгору", down: "Вниз", updown: "Вгору-вниз", random: "Випадково", pulse: "Пульс (повтор акорду)" } },
   pad: { name: "Пад / акорди", role: "pad", color: "#6366f1", program: 89, preset: "Теплий пад",
-    styles: { hold: "Тягнуті акорди", stabs: "Удари на 1 і 3", offbeat: "Офбіт (реггі / хаус)", pump: "Пульсація 1/8", piano: "Піаністичний ритм" } },
+    styles: { hold: "Тягнуті акорди", stabs: "Удари на 1 і 3", offbeat: "Офбіт (реггі / хаус)", pump: "Пульсація 1/8", piano: "Піаністичний ритм", ballad: "Балада (розкладені акорди)" } },
+  guitar: { name: "Гітара", role: "guitar", color: "#22c55e", program: 25, preset: "Гітарний щип",
+    styles: { pop: "Бій: поп (Д Д В В Д В)", rock: "Бій: рок восьмими", slow: "Бій: балада", reggae: "Бій: регі (офбіт)", pick: "Перебір (p i m a)", travis: "Перебір: кантрі / фолк" } },
 };
 const DRUMS = {
   pop: { k: [0, 8, 10], s: [4, 12], h: [0, 2, 4, 6, 8, 10, 12, 14] },
@@ -191,7 +193,16 @@ const DRUMS = {
   lofi: { k: [0, 7, 10], s: [4, 12], h: [0, 2, 4, 6, 8, 10, 12, 14], swing: 0.2, soft: true },
   reggaeton: { k: [0, 4, 8, 12], s: [3, 6, 11, 14], h: [0, 2, 4, 6, 8, 10, 12, 14] },
   halftime: { k: [0, 10], s: [8], h: [0, 2, 4, 6, 8, 10, 12, 14] },
+  drill: { k: [0, 7, 10], s: [6, 14], h: [0, 3, 6, 8, 11, 14], swing: 0.06 },
+  phonk: { k: [0, 3, 8, 10], s: [4, 12], h: [0, 2, 4, 6, 8, 10, 12, 14], cb: [0, 3, 6, 8, 10, 13] },
+  afro: { k: [0, 7, 10], s: [], r: [3, 6, 11, 14], h: [0, 2, 4, 6, 8, 10, 12, 14], perc: [2, 5, 9, 13], swing: 0.08 },
+  dnb: { k: [0, 10], s: [4, 12], h: [0, 2, 4, 6, 8, 10, 12, 14], ghost: [7, 15] },
+  funk: { k: [0, 3, 10], s: [4, 12], ghost: [7, 9, 15], h: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] },
+  disco: { k: [0, 4, 8, 12], s: [4, 12], h: [0, 4, 8, 12], oh: [2, 6, 10, 14] },
+  shuffle: { k: [0, 8], s: [4, 12], h: [0, 2, 4, 6, 8, 10, 12, 14], swing: 0.33 },
 };
+const DRUM_STYLE_KIT = { pop: "acoustic", hiphop: "808", trap: "trap", house: "909", rock: "rock", lofi: "lofi", reggaeton: "808", halftime: "808", drill: "trap", phonk: "trap", afro: "perc", dnb: "electro", funk: "acoustic", disco: "909", shuffle: "rock" };
+const GEN_FILLS = [[38, 38, 45, 45], [38, 38, 38, 38], [50, 47, 45, 45], [38, 47, 38, 45], [45, 38, 47, 38]];
 function genNotes(type, style, opt, range) {
   const out = [], bpb = S.B.timing.bpb, rnd = (a) => (Math.random() * 2 - 1) * a;
   const vel = (v) => Math.max(20, Math.min(127, Math.round(v + rnd(opt.human * 14))));
@@ -208,12 +219,17 @@ function genNotes(type, style, opt, range) {
       for (const st of pat.s) if (!(fill && st >= 12)) out.push([tim(at(st)), 0.25, style === "house" ? 39 : 38, vel(106 * soft)]);
       for (const st of pat.h) if (!(fill && st >= 12)) out.push([tim(at(st)), 0.25, 42, vel((st % 4 === 0 ? 92 : 72) * soft)]);
       for (const st of pat.oh || []) out.push([tim(at(st)), 0.25, 46, vel(84 * soft)]);
+      for (const st of pat.ghost || []) if (!(fill && st >= 12)) out.push([tim(at(st)), 0.2, 38, vel(48 * soft)]);
+      for (const st of pat.r || []) out.push([tim(at(st)), 0.2, 37, vel(88 * soft)]);
+      for (const st of pat.cb || []) out.push([tim(at(st)), 0.2, 56, vel(80 * soft)]);
+      for (const st of pat.perc || []) out.push([tim(at(st)), 0.2, 63, vel(76 * soft)]);
       if (style === "trap" && barIdx % 2 === 1) for (let r = 0; r < 4; r++) out.push([tim(bar + 3.5 + r * 0.125), 0.1, 42, vel(60 + r * 8)]);
-      if (fill) for (let r = 0; r < 4; r++) out.push([tim(bar + 3 + r * 0.25), 0.25, r < 2 ? 38 : 45, vel(90 + r * 6)]);
+      if (fill) { const fp = GEN_FILLS[Math.floor(Math.random() * GEN_FILLS.length)]; for (let r = 0; r < 4; r++) out.push([tim(bar + bpb - 1 + r * 0.25), 0.25, fp[r], vel(86 + r * 8)]); }
       if (opt.crash && secList().some((s) => Math.abs(s.start - bar) < 1e-3)) out.push([bar, 1, 49, vel(100)]);
     }
     return out;
   }
+  const VL = (type === "pad" || type === "guitar") && opt.vl !== false && typeof hmVoiceLead === "function" ? hmVoiceLead(chords, { center: 48 + 12 * opt.octave + 6 }) : null;
   for (const c of chords) {
     const iv = CH_IV[c.kind] || CH_IV[""];
     if (type === "bass") {
@@ -226,6 +242,11 @@ function genNotes(type, style, opt, range) {
         const nxt = chords[chords.indexOf(c) + 1], tgt = nxt ? 24 + 12 * opt.octave + nxt.root : r0;
         const seq = [0, iv[1], iv[2], null];
         for (let b = c.start, k = 0; b < c.end - 1e-3; b += 1, k++) { const st = seq[k % 4]; out.push([tim(b), 0.9, st == null ? tgt + (tgt > r0 ? -1 : 1) : r0 + st, vel(96)]); }
+      } else if (style === "slide808") for (let b = c.start; b < c.end - 1e-3; b += bpb) {
+        out.push([b, 1.4, r0, vel(112)]);
+        if (b + 1.5 < c.end) out.push([b + 1.5, 0.6, r0 + 12, vel(100)]);
+        if (b + 2 < c.end) out.push([b + 2, 0.9, r0, vel(104)]);
+        if (b + 3 < c.end) out.push([b + 3, Math.min(1.08, c.end - b - 3 + 0.08), r0 + (Math.random() < 0.5 ? 7 : 12), vel(96)]);
       } else if (style === "sub808") for (let b = c.start; b < c.end - 1e-3; b += bpb) { out.push([tim(b), 1.4, r0, vel(110)]); if (b + 2.5 < c.end) out.push([tim(b + 2.5), 1, r0, vel(100)]); }
     } else if (type === "arp") {
       const tones = [];
@@ -239,14 +260,36 @@ function genNotes(type, style, opt, range) {
       }
     } else if (type === "pad") {
       const center = 48 + 12 * opt.octave;
-      let vo = iv.map((i) => center - 6 + ((c.root + i - (center - 6)) % 12 + 12) % 12).sort((a, b) => a - b);
+      let vo = VL ? VL[chords.indexOf(c)].slice() : iv.map((i) => center - 6 + ((c.root + i - (center - 6)) % 12 + 12) % 12).sort((a, b) => a - b);
       if (opt.bassNote) vo = [36 + 12 * (opt.octave - 1) + c.root, ...vo];
       const hitAt = (b, l, v) => { for (const p of vo) out.push([tim(b), l, p, vel(v)]); };
       if (style === "hold") hitAt(c.start, (c.end - c.start) * 0.98, 88);
       else if (style === "stabs") for (let b = c.start; b < c.end - 1e-3; b += 2) hitAt(b, 0.4, 96);
       else if (style === "offbeat") for (let b = c.start + 0.5; b < c.end - 1e-3; b += 1) hitAt(b, 0.3, 90);
       else if (style === "pump") for (let b = c.start; b < c.end - 1e-3; b += 0.5) hitAt(b, 0.4, b % 1 < 1e-3 ? 70 : 96);
-      else if (style === "piano") for (let b = c.start; b < c.end - 1e-3; b += bpb) for (const [o, l] of [[0, 1.4], [1.5, 0.4], [2, 1], [3.5, 0.4]]) if (b + o < c.end - 1e-3) hitAt(b + o, l, o === 0 ? 100 : 84);
+      else if (style === "piano") { for (let b = c.start; b < c.end - 1e-3; b += bpb) for (const [o, l] of [[0, 1.4], [1.5, 0.4], [2, 1], [3.5, 0.4]]) if (b + o < c.end - 1e-3) hitAt(b + o, l, o === 0 ? 100 : 84); }
+      else if (style === "ballad") {
+        const low = 36 + 12 * (opt.octave - 1) + c.root, seq = [low, low + 7, ...vo, vo[vo.length - 2] || vo[0]];
+        for (let b = c.start, k = 0; b < c.end - 1e-3; b += 0.5, k++) out.push([tim(b), k % seq.length === 0 ? Math.min(2, c.end - b) : 0.9, seq[k % seq.length], vel(k % seq.length === 0 ? 96 : 78)]);
+      }
+    } else if (type === "guitar") {
+      const lowE = 40 + 12 * (opt.octave - 1), r = lowE + ((c.root - lowE) % 12 + 12) % 12;
+      const third = iv[1], fifth = iv[2] != null ? iv[2] : 7, sev = iv[3];
+      const strings = [r, r + fifth, r + 12, r + 12 + third, r + 12 + fifth, sev != null ? r + 12 + sev : r + 24];
+      const pats = { pop: [[0, "D"], [1, "D"], [1.5, "U"], [2.5, "U"], [3, "D"], [3.5, "U"]], rock: [[0, "D"], [0.5, "D"], [1, "D"], [1.5, "D"], [2, "D"], [2.5, "D"], [3, "D"], [3.5, "D"]], slow: [[0, "D"], [1.5, "D"], [2, "U"], [3, "D"], [3.5, "U"]], reggae: [[0.5, "C"], [1.5, "C"], [2.5, "C"], [3.5, "C"]],
+        pick: [[0, 0], [0.5, 2], [1, 3], [1.5, 4], [2, 1], [2.5, 3], [3, 4], [3.5, 5]], travis: [[0, 0], [0.5, 4], [1, 1], [1.5, 3], [2, 0], [2.5, 5], [3, 1], [3.5, 3]] };
+      const pat = (pats[style] || pats.pop).filter((e) => e[0] < bpb - 1e-6);
+      for (let bar = Math.floor(c.start / bpb) * bpb; bar < c.end - 1e-3; bar += bpb) {
+        pat.forEach(([o, kind], i) => {
+          const b = bar + o;
+          if (b < c.start - 1e-3 || b >= c.end - 1e-3) return;
+          const nx = pat[i + 1] ? pat[i + 1][0] : bpb, len = Math.min(nx - o, c.end - b);
+          if (typeof kind === "number") { out.push([tim(b), Math.max(0.3, len * (kind < 2 ? 2 : 1.6)), strings[kind], vel(kind < 2 ? 92 : 80)]); return; }
+          const order = kind === "D" ? [0, 1, 2, 3, 4, 5] : kind === "U" ? [5, 4, 3, 2] : [5, 4, 3];
+          const acc = Math.abs(o % 1) < 1e-6 ? 1 : 0.85;
+          order.forEach((si, k) => out.push([tim(b) + k * (kind === "D" ? 0.016 : 0.012), kind === "C" ? 0.18 : Math.max(0.15, len * 0.95), strings[si], vel((kind === "D" ? 98 : kind === "U" ? 76 : 86) * acc - k * 2)]));
+        });
+      }
     }
   }
   return out.filter((n) => n[0] >= range[0] - 0.02 && n[0] < range[1]).map((n) => [Math.max(0, +n[0].toFixed(4)), +n[1].toFixed(4), n[2], n[3]]);
@@ -266,6 +309,7 @@ function openGenerator(secIdx = null) {
         ${type !== "drums" ? `<label>Октава<select id="gen-oct">${[0, 1, 2].map((o) => `<option value="${o}" ${o === opt.octave ? "selected" : ""}>${["нижче", "звичайна", "вище"][o]}</option>`).join("")}</select></label>` : ""}
         ${type === "arp" ? `<label>Швидкість<select id="gen-rate"><option value="0.5">1/8</option><option value="0.25" selected>1/16</option><option value="0.3333333">1/8 тріоль</option></select></label><label>Діапазон<select id="gen-range"><option value="1">1 октава</option><option value="2" selected>2 октави</option><option value="3">3 октави</option></select></label>` : ""}
         ${type === "pad" ? `<label class="chk"><input type="checkbox" id="gen-bn"> + басова нота</label>` : ""}
+        ${type === "pad" || type === "guitar" ? `<label class="chk" data-hint="Акорди переходять плавно: кожен голос іде на найближчу ноту"><input type="checkbox" id="gen-vl" ${opt.vl !== false ? "checked" : ""}> плавне голосоведення</label>` : ""}
         ${type === "drums" ? `<label class="chk"><input type="checkbox" id="gen-fill" checked> збивки кожні 8 тактів</label><label class="chk"><input type="checkbox" id="gen-crash" checked> тарілка на початку секцій</label><label>Свінг<input type="range" id="gen-swing" min="0" max="0.33" step="0.01" value="0"></label>` : ""}
         <label>Живість<input type="range" id="gen-human" min="0" max="1" step="0.05" value="${opt.human}" data-hint="Невеликі випадкові відхилення гучності й часу, щоб звучало не «машинно»"></label>
       </div>
@@ -281,10 +325,11 @@ function openGenerator(secIdx = null) {
     opt.human = +$("#gen-human").value;
     if ($("#gen-rate")) { opt.rate = +$("#gen-rate").value; opt.range = +$("#gen-range").value; }
     if ($("#gen-bn")) opt.bassNote = $("#gen-bn").checked;
+    if ($("#gen-vl")) opt.vl = $("#gen-vl").checked;
     if ($("#gen-fill")) { opt.fills = $("#gen-fill").checked; opt.crash = $("#gen-crash").checked; opt.swing = +$("#gen-swing").value; }
     return { style: $("#gen-style").value, range, scopeName: sc === "all" ? "" : " · " + secs[+sc].name_ua, tm };
   };
-  const instFor = () => type === "drums" ? { type: "drums", kit: "808", pads: {} } : { type: "synth", preset: GEN[type].preset, params: Plugins.presetByName(GEN[type].preset) };
+  const instFor = (st) => type === "drums" ? { type: "drums", kit: DRUM_STYLE_KIT[st] || "808", pads: {} } : { type: "synth", preset: type === "bass" && /808/.test(st || "") ? "808" : GEN[type].preset, params: Plugins.presetByName(type === "bass" && /808/.test(st || "") ? "808" : GEN[type].preset) };
   function stopPrev() { if (prevStop) prevStop(); prevStop = null; }
   function preview() {
     stopPrev();
@@ -294,7 +339,7 @@ function openGenerator(secIdx = null) {
     if (S.playing) stopPlay();
     const b0 = notes[0][0] - (notes[0][0] % S.B.timing.bpb), b1 = b0 + 4 * S.B.timing.bpb, P = period();
     const g = ctx.createGain(); g.connect(A.master ? A.master.input : A.out);
-    const t0 = ctx.currentTime + 0.1, inst = instFor();
+    const t0 = ctx.currentTime + 0.1, inst = instFor(r.style);
     if (inst.type === "drums") loadInstrumentBuffers();
     for (const n of notes) if (n[0] >= b0 && n[0] < b1) DSP.playNote(ctx, g, inst, n[2], n[3] / 127, t0 + (n[0] - b0) * P, n[1] * P, A.ibuf);
     const others = [];
@@ -316,9 +361,9 @@ function openGenerator(secIdx = null) {
     if (!S.mix.gens) S.mix.gens = [];
     const g = GEN[type], id = uid("gen");
     const name = `${g.name} · ${g.styles[r.style]}${r.scopeName}`;
-    S.mix.gens.push({ id, name, color: g.color, role: g.role, is_drums: !!g.is_drums, program: g.program || 0, notes });
+    S.mix.gens.push({ id, name, color: g.color, role: g.role, is_drums: !!g.is_drums, program: g.program || 0, notes, spec: { type, style: r.style, opt: { ...opt }, range: [...r.range], all: $("#gen-scope").value === "all" } });
     const P = period();
-    S.mix.tracks[id] = { vol: 0, pan: 0, mute: false, solo: false, mode: "midi", fx: [], inst: instFor(), source: null, notes: null,
+    S.mix.tracks[id] = { vol: 0, pan: 0, mute: false, solo: false, mode: "midi", fx: [], inst: instFor(r.style), mfx: r.style === "slide808" ? [{ type: "glide", on: true, time: 0.08 }] : undefined, source: null, notes: null,
       clips: [{ id: uid("c"), start: 0, src: -S.B.timing.pad, dur: (arrEnd() + 16) * P, gain: 0, fi: 5e-3, fo: 5e-3, mute: false }] };
     _tracksKey = ""; S.sel = id; S.dockTab = "notes";
     modal.hidden = true;

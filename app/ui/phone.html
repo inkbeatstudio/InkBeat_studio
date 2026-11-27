@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>InkBeat · телефон</title>
+<style>
+body { margin: 0; background: #0c0d11; color: #e9ebf1; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+.w { max-width: 520px; margin: 0 auto; padding: 22px 18px 40px; display: flex; flex-direction: column; gap: 16px; }
+h1 { font-size: 22px; margin: 0; letter-spacing: .04em; }
+h1 span { color: #ffb547; }
+p { color: #8b91a3; margin: 0; line-height: 1.5; font-size: 15px; }
+.big { display: block; text-align: center; padding: 26px 10px; border-radius: 18px; background: #ffb547; color: #111; font-size: 20px; font-weight: 700; border: none; width: 100%; }
+.alt { background: #1a1d24; color: #e9ebf1; border: 1px solid rgba(255,255,255,.12); font-size: 16px; padding: 16px; }
+input[type=text], textarea { width: 100%; box-sizing: border-box; background: #14161c; color: #e9ebf1; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 12px; font-size: 16px; font-family: inherit; }
+textarea { min-height: 110px; }
+.seg { display: flex; gap: 8px; }
+.seg button { flex: 1; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.12); background: #14161c; color: #e9ebf1; font-size: 14px; }
+.seg button.on { background: #4fd1c5; color: #111; border-color: #4fd1c5; }
+.st { min-height: 22px; color: #4fd1c5; font-size: 15px; }
+.st.err { color: #f87171; }
+ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+li { background: #14161c; border-radius: 10px; padding: 10px 12px; font-size: 14px; color: #c7cbd6; }
+input[type=file] { display: none; }
+</style>
+</head>
+<body>
+<div class="w">
+  <h1>INK<span>BEAT</span> · <span id="t-h">телефон</span></h1>
+  <p id="t-intro">Запишіть ідею — наспівайте мелодію, награйте рифф чи ритм — і вона з'явиться в програмі на комп'ютері, у вікні «Ідеї з телефона».</p>
+  <div class="seg" id="kind"><button data-k="melody" class="on" id="t-mel">Мелодія</button><button data-k="beat" id="t-beat">Ритм</button><button data-k="idea" id="t-idea">Інше</button></div>
+  <input type="text" id="name" placeholder="Назва (необов'язково)">
+  <label class="big" for="rec" id="t-rec">🎙 Записати голосом</label>
+  <input type="file" id="rec" accept="audio/*" capture="microphone">
+  <label class="big alt" for="pick" id="t-pick">📁 Вибрати запис із телефона</label>
+  <input type="file" id="pick" accept="audio/*,video/mp4">
+  <textarea id="text" placeholder="Рядки тексту, рими, думки…"></textarea>
+  <button class="big alt" id="send-text">✉ Надіслати текст</button>
+  <div class="st" id="st"></div>
+  <ul id="sent"></ul>
+</div>
+<script>
+"use strict";
+const EN = !/^uk|^ru/i.test(navigator.language || "");
+const T = EN ? { h: "phone", intro: "Record an idea — hum a melody, play a riff or a rhythm — and it appears in the app on your computer, in the “Ideas from phone” window.", mel: "Melody", beat: "Rhythm", idea: "Other", rec: "🎙 Record voice", pick: "📁 Pick a recording", text: "Lyrics, rhymes, thoughts…", send: "✉ Send text", name: "Name (optional)", up: "Sending…", ok: "Sent! Check the computer.", err: "Couldn't send: ", empty: "Write some text first." }
+  : { h: "телефон", intro: null, mel: null, beat: null, idea: null, rec: null, pick: null, text: null, send: null, name: null, up: "Надсилаю…", ok: "Надіслано! Перевірте комп'ютер.", err: "Не вдалося надіслати: ", empty: "Спершу напишіть текст." };
+const $ = (id) => document.getElementById(id);
+if (EN) { $("t-h").textContent = T.h; $("t-intro").textContent = T.intro; $("t-mel").textContent = T.mel; $("t-beat").textContent = T.beat; $("t-idea").textContent = T.idea; $("t-rec").textContent = T.rec; $("t-pick").textContent = T.pick; $("text").placeholder = T.text; $("send-text").textContent = T.send; $("name").placeholder = T.name; document.documentElement.lang = "en"; }
+let kind = "melody";
+document.querySelectorAll("#kind button").forEach((b) => b.onclick = () => { kind = b.dataset.k; document.querySelectorAll("#kind button").forEach((x) => x.classList.toggle("on", x === b)); });
+const k = new URLSearchParams(location.search).get("k") || "";
+async function send(file, text) {
+  const st = $("st");
+  st.className = "st"; st.textContent = T.up;
+  const fd = new FormData();
+  if (file) fd.append("file", file, file.name || "idea.m4a");
+  fd.append("text", text || "");
+  fd.append("name", $("name").value || "");
+  fd.append("kind", kind);
+  try {
+    const r = await fetch("/up?k=" + encodeURIComponent(k), { method: "POST", body: fd });
+    if (!r.ok) throw new Error(r.status);
+    st.textContent = T.ok;
+    const li = document.createElement("li");
+    li.textContent = new Date().toLocaleTimeString() + " · " + ($("name").value || (file ? file.name : (text || "").slice(0, 40)));
+    $("sent").prepend(li);
+    $("name").value = "";
+  } catch (e) { st.className = "st err"; st.textContent = T.err + e.message; }
+}
+$("rec").onchange = (e) => { if (e.target.files[0]) send(e.target.files[0], ""); e.target.value = ""; };
+$("pick").onchange = (e) => { if (e.target.files[0]) send(e.target.files[0], ""); e.target.value = ""; };
+$("send-text").onclick = () => { const t = $("text").value.trim(); if (!t) { $("st").textContent = T.empty; return; } send(null, t); $("text").value = ""; };
+</script>
+</body>
+</html>

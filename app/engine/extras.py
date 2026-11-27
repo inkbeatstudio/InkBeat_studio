@@ -27,7 +27,8 @@ def library() -> dict:
     for f in sorted((d / "samples").glob("*.wav"), key=lambda x: x.name.lower()):
         m = meta.get(f.name, {})
         out.append({"id": "lib:" + f.name, "file": "lib:" + f.name, "name": f.stem, "dur": m.get("dur", 0),
-                    "root": m.get("root"), "root_name": m.get("root_name"), "kind": m.get("kind", "note")})
+                    "root": m.get("root"), "root_name": m.get("root_name"), "kind": m.get("kind", "note"),
+                    "bpm": m.get("bpm"), "key": m.get("key")})
     return {"samples": out, "presets": read_json(d / "presets.json", {"synth": {}, "fx": {}, "chain": {}})}
 
 
@@ -410,3 +411,49 @@ def create_empty(title: str, bpm: float, bpb: int, tonic: int, mode: str, bars: 
         pass
     P.build(pid)
     return pid
+
+
+def analyze_library() -> dict:
+    from .creative import estimate_bpm, estimate_key
+
+    d = libdir()
+    meta = read_json(d / "samples.json", {})
+    changed = 0
+    for name, m in meta.items():
+        if "bpm" in m and "key" in m:
+            continue
+        f = d / "samples" / name
+        if not f.exists():
+            continue
+        try:
+            y, sr = P.load_audio(f, 22050)
+            dur = y.shape[1] / sr
+            m["bpm"] = round(float(estimate_bpm(y, sr)), 1) if dur >= 1.5 else None
+            m["key"] = estimate_key(y, sr) if dur >= 0.4 else None
+        except Exception:
+            m["bpm"], m["key"] = None, None
+        changed += 1
+    if changed:
+        write_json(d / "samples.json", meta)
+    return meta
+
+
+def fit_sample(name: str, factor: float, semis: float) -> bytes:
+    import io
+
+    import soundfile as sf
+
+    from .creative import _stretch_hq
+
+    f = sample_path(name)
+    if not f:
+        raise FileNotFoundError(name)
+    y, sr = P.load_audio(f, 44100)
+    if abs(factor - 1) > 1e-3 or abs(semis) > 1e-3:
+        y = _stretch_hq(y, sr, factor, semis)
+    pk = float(np.abs(y).max()) if y.size else 0
+    if pk > 0.999:
+        y = y * (0.999 / pk)
+    buf = io.BytesIO()
+    sf.write(buf, np.atleast_2d(y).T, sr, format="WAV", subtype="PCM_16")
+    return buf.getvalue()

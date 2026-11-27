@@ -1044,6 +1044,19 @@ async function openMixAssistant() {
       x.m.sends[b.id] = Math.max(-30, Math.round(20 * Math.log10(Math.max(0.03, wet)) * 2) / 2);
     }
   } });
+  const eqOf = (m) => { let f = (m.fx || []).find((x) => x.type === "eq"); if (!f) { f = Plugins.newFx("eq"); m.fx = m.fx || []; m.fx.unshift(f); } return f; };
+  const muddy = info.filter((x) => !["bass", "drums", "vocals"].includes(x.role) && x.prof.lowmid > -3.5);
+  if (muddy.length >= 2) sugg.push({ kind: "mud", title: "«Каша» на низькій середині (250–500 Гц)", text: `${muddy.map((x) => `«${x.t.name}»`).join(", ")} разом перевантажують зону 250–500 Гц — мікс звучить глухо й нечітко. Пропоную зрізати по −3 дБ на 350 Гц у кожній, крім найважливішої.`, apply: () => {
+    muddy.sort((a2, b2) => (b2.lufs + (b2.m.vol || 0)) - (a2.lufs + (a2.m.vol || 0))).slice(1).forEach((x) => { const f = eqOf(x.m); const band = f.params.bands[2]; band.f = 350; band.g = -3; band.q = 1.2; band.on = true; });
+  } });
+  const mids = info.filter((x) => !["vocals", "drums", "bass"].includes(x.role) && x.prof.mid > -6);
+  for (let i = 0; i < mids.length; i++) for (let j = i + 1; j < mids.length; j++) {
+    const A2 = mids[i], B2 = mids[j], la = A2.lufs + (A2.m.vol || 0), lb = B2.lufs + (B2.m.vol || 0);
+    if (Math.abs(la - lb) > 6) continue;
+    const low = (TARGET_REL[A2.role] ?? -8) < (TARGET_REL[B2.role] ?? -8) ? A2 : B2, hi = low === A2 ? B2 : A2;
+    sugg.push({ kind: "clash", title: `«${A2.t.name}» і «${B2.t.name}» б'ються на 1–4 кГц`, text: `Обидві доріжки однаково гучні в зоні розбірливості. Пропоную звільнити місце: −3 дБ на 2,5 кГц у «${low.t.name}», щоб «${hi.t.name}» читалася чіткіше.`, apply: () => { const f = eqOf(low.m); const band = f.params.bands[3]; band.f = 2500; band.g = -3; band.q = 1; band.on = true; } });
+    if (sugg.filter((x) => x.kind === "clash").length >= 3) break;
+  }
   if (!(S.mix.master.fx || []).some((f) => f.type === "limiter")) sugg.push({ kind: "lim", title: "На Master немає лімітера", text: "Лімітер на Master захищає від перевантаження і дає конкурентну гучність. Можна також одразу скористатися «Мастеринг одним кліком».", apply: () => S.mix.master.fx.push(Plugins.newFx("limiter", Object.keys(FXC.limiter.presets)[0])) });
   box.innerHTML = sugg.length ? `<p class="muted small">Знайдено ${sugg.length}. Кожну пораду можна застосувати окремо; усе скасовується Ctrl+Z.</p><div class="as-list">${sugg.map((s, i) => `<div class="as-item" data-i="${i}"><div><b>${escapeHtml(s.title)}</b><p>${escapeHtml(s.text)}</p></div><button class="btn primary sm" data-ap="${i}">Застосувати</button></div>`).join("")}</div><div class="modal-actions"><button class="btn ghost" data-close2>Закрити</button><button class="btn primary" id="as-all">Застосувати все</button></div>` : `<p>Серйозних проблем не знайдено: баланс і частоти в порядку. Порівняйте мікс з референсом в Аналізаторі.</p><div class="modal-actions"><button class="btn primary" data-close2>Добре</button></div>`;
   const doApply = (idx) => {
