@@ -157,7 +157,7 @@ async function renderMixQuick(masterFx, from = 0, to = null) {
     if (t.has_audio && (mode === "audio" || mode === "both") && A.buffers[srcKey(t)]) scheduleClips(ctx, t, A.buffers[srcKey(t)], st.input, from, 0, null);
     if (mode === "midi" || mode === "both") {
       const g = ctx.createGain(); g.gain.value = mode === "both" ? 0.7 : 1; g.connect(st.input);
-      for (const n of arranged(t)) if (n[0] >= from && n[0] < end) DSP.playNote(ctx, g, m.inst, n[2], n[3] / 127, (n[0] - from) * P, n[1] * P, A.ibuf);
+      for (const n of playNotes(t)) if (n[0] >= from && n[0] < end) DSP.playNote(ctx, g, m.inst, n[2], n[3] / 127, (n[0] - from) * P, n[1] * P, A.ibuf, noteMods(t, n, (b) => (b - from) * P));
     }
   }
   return ctx.startRendering();

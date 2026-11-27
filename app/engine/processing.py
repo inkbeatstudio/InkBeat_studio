@@ -21,6 +21,7 @@ OPS = {
     "pitchedit": "Редактор висоти нот", "breath": "Прибрати вдихи й клацання", "rider": "Вокал-райдер (рівна гучність)",
     "align": "Вирівнювання за часом", "vst": "VST-плагін", "deshimmer": "Прибрати цифрові артефакти", "dereverb": "Прибрати реверберацію",
     "highs": "Відновити верхи", "drumreplace": "Заміна барабанів", "quantize": "Квантування аудіо",
+    "stretch": "Розтягування в часі", "formant": "Тембр голосу",
 }
 
 
@@ -490,6 +491,17 @@ def apply_op(pdir: Path, project: dict, base: str, source: str | None, op: str, 
         stats = {"plugin": p.get("label") or p.get("name") or Path(p["path"]).stem}
     elif op == "reverse":
         res = full[:, ::-1][:, a:b].copy() if window else full[:, ::-1].copy()
+    elif op == "stretch":
+        from .creative import stretch
+
+        res, stats = stretch(y, sr, p.get("mode", "fit"), float(p.get("from_bpm", 0) or 0), float(p.get("to_bpm", 120) or 120),
+                             float(p.get("speed", 100)), str(p.get("keep_pitch", "1")) not in ("0", "false", "False"), progress)
+        if window:
+            res = np.pad(res, ((0, 0), (0, max(0, (s1 - a) - res.shape[1]))))
+    elif op == "formant":
+        from .creative import formant
+
+        res, stats = formant(y, sr, float(p.get("shift", 0)), p.get("character", "none"), float(p.get("mix", 1.0)), progress)
     else:
         raise ValueError(f"невідома операція {op}")
     res = np.atleast_2d(res)

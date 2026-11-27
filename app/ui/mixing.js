@@ -461,7 +461,7 @@ function scheduleTrackSources(ctx, t, m, st, from, end, buffers, ibuf) {
     const g = ctx.createGain();
     g.gain.value = mode === "both" ? 0.7 : 1;
     g.connect(st.input);
-    for (const n of arranged(t)) if (n[0] >= from && n[0] < end) DSP.playNote(ctx, g, m.inst, n[2], n[3] / 127, (n[0] - from) * P, n[1] * P, ibuf);
+    for (const n of playNotes(t)) if (n[0] >= from && n[0] < end) DSP.playNote(ctx, g, m.inst, n[2], n[3] / 127, (n[0] - from) * P, n[1] * P, ibuf, noteMods(t, n, (b) => (b - from) * P));
   }
 }
 function buildOfflineGraph(ctx, masterFx, from, end, buffers, ibuf, opts = {}) {
@@ -569,10 +569,10 @@ renderAll = async function(progress) {
       }
     }
     if (mode === "midi" || mode === "both") {
-      const notes = arranged(t), g = ctx2.createGain();
+      const notes = playNotes(t), g = ctx2.createGain();
       g.gain.value = mode === "both" ? 0.7 : 1;
       g.connect(strip2.input);
-      for (const n of notes) DSP.playNote(ctx2, g, m.inst, n[2], n[3] / 127, n[0] * P, n[1] * P, S.audio.ibuf);
+      for (const n of notes) DSP.playNote(ctx2, g, m.inst, n[2], n[3] / 127, n[0] * P, n[1] * P, S.audio.ibuf, noteMods(t, n, (b) => b * P));
       hasContent = hasContent || notes.length > 0;
     }
     if (!hasContent) continue;
@@ -689,11 +689,11 @@ function addBus(kind) {
 }
 const MXV = { raf: 0 };
 function renderMixerDock() {
-  const dock = $("#dock");
+  const dock = DK.cur ? DK.cur.box : $("#dock");
   dock.hidden = !S.dockOpen;
   $("#t-dock").classList.toggle("on", S.dockOpen);
   if (!S.dockOpen) return layout();
-  const head = $("#dock-head"), el = $("#dock-body"), T = _dockTargetMx();
+  const head = DK.cur ? DK.cur.head : $("#dock-head"), el = DK.cur ? DK.cur.body : $("#dock-body"), T = _dockTargetMx();
   head.innerHTML = `<b>Мікшер</b><span class="muted small">усі канали, шини й Master</span>
     <div class="dk-tabs"><button class="active" data-dt="mixer">Мікшер</button>${T ? `<button data-dt="fx">Канал: ${escapeHtml(T.name)}</button>` : ""}</div><span class="spacer"></span>
     <button class="btn ghost sm" id="mx-assist" data-hint="Помічник зведення: автобаланс гучності, конфлікти частот, поради одним кліком">Помічник зведення</button>
@@ -886,7 +886,7 @@ renderDock = function() {
     return;
   }
   _renderDockMx();
-  const tabs = $("#dock-head .dk-tabs");
+  const tabs = (DK.cur ? DK.cur.head : $("#dock-head")).querySelector(".dk-tabs");
   if (tabs && !tabs.querySelector('[data-dt="mixer"]')) {
     const b = document.createElement("button");
     b.dataset.dt = "mixer";

@@ -348,6 +348,211 @@ def project_preview(pid):
     return send_file(io.BytesIO(wav), mimetype="audio/wav", max_age=0)
 
 
+@app.get("/api/project/<pid>/soundfont")
+def soundfont_list(pid):
+    from .engine import soundfont as SFT
+
+    return jsonify(SFT.list_libs(_pdir(pid)))
+
+
+@app.post("/api/project/<pid>/soundfont")
+def soundfont_add(pid):
+    from .engine import soundfont as SFT
+
+    d = _pdir(pid)
+    tmp = None
+    try:
+        if request.files.get("file"):
+            f = request.files["file"]
+            tmpd = d / "cache" / "sf_upload"
+            tmpd.mkdir(parents=True, exist_ok=True)
+            suf = Path(f.filename or "x.sf2").suffix.lower()
+            tmp = tmpd / (uuid.uuid4().hex[:8] + suf)
+            f.save(tmp)
+            meta = SFT.import_file(d, tmp, Path(f.filename or "SoundFont").stem)
+        else:
+            data = request.get_json(force=True) or {}
+            if request.remote_addr not in ("127.0.0.1", "::1"):
+                abort(403)
+            meta = SFT.import_file(d, Path(data["path"]))
+        return jsonify(meta)
+    except Exception as e:
+        return jsonify({"error": _friendly(e)}), 400
+    finally:
+        if tmp:
+            tmp.unlink(missing_ok=True)
+
+
+@app.post("/api/project/<pid>/soundfont/<lid>/preset")
+def soundfont_preset(pid, lid):
+    from .engine import soundfont as SFT
+
+    data = request.get_json(force=True) or {}
+    try:
+        return jsonify(SFT.load_preset(_pdir(pid), Path(lid).name, int(data.get("index", 0))))
+    except Exception as e:
+        return jsonify({"error": _friendly(e)}), 400
+
+
+@app.post("/api/project/<pid>/slice")
+def project_slice(pid):
+    d = _pdir(pid)
+    data = request.get_json(force=True) or {}
+    jid = uuid.uuid4().hex[:10]
+    job = {"id": jid, "status": "running", "progress": 0.0, "result": None, "error": None}
+    PROC_JOBS[jid] = job
+
+    def work():
+        try:
+            from .engine import creative as CR
+            from .engine.project import load_audio
+            from .engine.soundfont import lib_dir
+
+            src = data.get("source")
+            path = PR.Versions(d).path(src) if src else d / "stems" / f"{Path(data['base']).name}.wav"
+            y, sr = load_audio(path)
+            a = max(0.0, float(data.get("from") or 0))
+            b = float(data.get("to") or y.shape[1] / sr)
+            y = y[:, int(a * sr): int(b * sr)]
+            sid = "slice" + uuid.uuid4().hex[:6]
+            out = lib_dir(d) / sid
+            sl = CR.slice_audio(y, sr, out, f"_instruments/{sid}", float(data.get("sensitivity", 0.5)), int(data.get("max", 32)),
+                                lambda f: job.__setitem__("progress", float(f)))
+            for s_ in sl:
+                s_["start"] += a
+            job["result"] = {"slices": sl}
+            job["status"] = "done"
+        except Exception as e:
+            job["status"] = "error"
+            job["error"] = _friendly(e)
+            job["trace"] = traceback.format_exc()[-1500:]
+
+    threading.Thread(target=work, daemon=True).start()
+    return jsonify({"job": jid})
+
+
+@app.post("/api/project/<pid>/practice")
+def project_practice(pid):
+    import numpy as np
+    import soundfile as sf
+
+    d = _pdir(pid)
+    data = request.get_json(force=True) or {}
+    try:
+        from .engine.creative import _stretch_hq
+        from .engine.project import load_audio
+
+        p = P.load_project(pid)
+        srcs = data.get("sources") or {}
+        excl = set(data.get("exclude") or [])
+        a, b = max(0.0, float(data.get("from", 0))), float(data.get("to", 30))
+        mix, sr = None, None
+        for t in p["tracks"]:
+            if t["id"] in excl or (t.get("settings") or {}).get("removed"):
+                continue
+            src = srcs.get(t["id"])
+            path = PR.Versions(d).path(src) if src else d / "stems" / f"{t['id']}.wav"
+            if not path.exists():
+                continue
+            y, sr = load_audio(path)
+            y = y[:, int(a * sr): int(b * sr)]
+            if mix is None:
+                mix = y.copy()
+            else:
+                n = min(mix.shape[1], y.shape[1])
+                mix = mix[:, :n] + y[:, :n]
+        if mix is None:
+            return jsonify({"error": "Немає звуку для цього фрагмента."}), 400
+        speed = max(0.3, min(1.5, float(data.get("speed", 1.0))))
+        if abs(speed - 1.0) > 1e-3:
+            mix = _stretch_hq(mix, sr, 1.0 / speed)
+        pk = float(np.abs(mix).max()) or 1.0
+        if pk > 0.98:
+            mix = mix * (0.98 / pk)
+        out = d / "cache" / "practice.wav"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        sf.write(str(out), mix.T, sr, subtype="PCM_16")
+        return jsonify({"url": f"/api/project/{pid}/practice.wav?t={uuid.uuid4().hex[:6]}", "duration": mix.shape[1] / sr})
+    except Exception as e:
+        return jsonify({"error": _friendly(e)}), 500
+
+
+@app.post("/api/project/<pid>/save_text")
+def project_save_text(pid):
+    d = _pdir(pid)
+    data = request.get_json(force=True) or {}
+    name = Path(str(data.get("name") or "file.txt")).name
+    if not name or Path(name).suffix.lower() not in (".musicxml", ".xml", ".txt", ".svg", ".html"):
+        return jsonify({"error": "Недозволений тип файлу."}), 400
+    sub = Path(str(data.get("folder") or "")).name
+    out = d / "export" / "Ноти" if not sub else d / "export" / sub
+    out.mkdir(parents=True, exist_ok=True)
+    (out / name).write_text(str(data.get("text") or ""), encoding="utf-8")
+    return jsonify({"path": str(out / name)})
+
+
+@app.post("/api/project/<pid>/open_path")
+def project_open_path(pid):
+    d = _pdir(pid)
+    data = request.get_json(force=True) or {}
+    p = Path(str(data.get("path") or ""))
+    try:
+        p = p.resolve()
+        if d.resolve() not in p.parents:
+            abort(403)
+    except Exception:
+        abort(400)
+    _open_folder(p if p.is_dir() else p.parent)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/project/<pid>/practice.wav")
+def project_practice_wav(pid):
+    f = _pdir(pid) / "cache" / "practice.wav"
+    if not f.exists():
+        abort(404)
+    return send_file(f, mimetype="audio/wav", max_age=0)
+
+
+@app.post("/api/project/<pid>/to_notes")
+def project_to_notes(pid):
+    d = _pdir(pid)
+    data = request.get_json(force=True) or {}
+    jid = uuid.uuid4().hex[:10]
+    job = {"id": jid, "status": "running", "progress": 0.0, "result": None, "error": None}
+    PROC_JOBS[jid] = job
+
+    def work():
+        try:
+            from .engine import creative as CR
+            from .engine.project import load_audio
+
+            src = data.get("source")
+            path = PR.Versions(d).path(src) if src else d / "stems" / f"{Path(data['base']).name}.wav"
+            y, sr = load_audio(path)
+            a, b = data.get("from"), data.get("to")
+            off = 0.0
+            if a is not None and b is not None and float(b) > float(a):
+                off = max(0.0, float(a))
+                y = y[:, int(off * sr): int(float(b) * sr)]
+            prog = lambda f: job.__setitem__("progress", float(f))
+            if data.get("kind") == "drums":
+                notes = CR.beatbox_notes(y, sr, float(data.get("sensitivity", 0.5)), prog)
+            else:
+                notes = CR.hum_notes(y, sr, prog)
+            for n in notes:
+                n[0] += off
+            job["result"] = {"notes": notes, "bpm": CR.estimate_bpm(y, sr) if data.get("kind") == "drums" and len(notes) > 4 else None}
+            job["status"] = "done"
+        except Exception as e:
+            job["status"] = "error"
+            job["error"] = _friendly(e)
+            job["trace"] = traceback.format_exc()[-1500:]
+
+    threading.Thread(target=work, daemon=True).start()
+    return jsonify({"job": jid})
+
+
 @app.get("/api/process/<jid>")
 def process_status(jid):
     j = PROC_JOBS.get(jid)

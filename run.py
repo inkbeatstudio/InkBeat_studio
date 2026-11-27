@@ -133,6 +133,8 @@ class DesktopApi:
             "audio": ("Аудіо (*.wav;*.mp3;*.flac;*.ogg;*.m4a;*.aif;*.aiff;*.opus)", "Усі файли (*.*)"),
             "image": ("Зображення (*.jpg;*.jpeg;*.png;*.webp)", "Усі файли (*.*)"),
             "zip": ("Архів (*.zip)", "Усі файли (*.*)"),
+            "inkbeat": ("Архів InkBeat (*.inkbeat;*.zip)", "Усі файли (*.*)"),
+            "soundfont": ("SoundFont / SFZ (*.sf2;*.sfz;*.zip)", "Усі файли (*.*)"),
         }.get(kind, ("Усі файли (*.*)",))
         return self._dialog("OPEN", bool(multiple), types)
 

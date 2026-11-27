@@ -1,6 +1,14 @@
 "use strict";
-const $ = (s, el = document) => el.querySelector(s);
-const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const DK = { root: null, cur: null };
+const $ = (s, el) => el ? el.querySelector(s) : (DK.root && DK.root.querySelector(s)) || document.querySelector(s);
+const $$ = (s, el) => {
+  if (el) return [...el.querySelectorAll(s)];
+  if (DK.root) {
+    const r = DK.root.querySelectorAll(s);
+    if (r.length) return [...r];
+  }
+  return [...document.querySelectorAll(s)];
+};
 const NOTE_NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
 const DRUM_ROWS = [[49, 51, 57], [42, 44, 46], [45, 47, 48, 50], [38, 39, 40], [36]];
 const DRUM_LABELS = ["Тар.", "Хет", "Томи", "Малий", "Бочка"];
@@ -576,8 +584,9 @@ function drawTop() {
   const b0 = scrollBeat(), b1 = b0 + w / S.ppb, bpb = tm.bpb;
   ctx.font = "11px " + getComputedStyle(document.body).getPropertyValue("--mono");
   const barEvery = S.ppb * bpb < 26 ? 8 : S.ppb * bpb < 50 ? 4 : S.ppb * bpb < 90 ? 2 : 1;
-  for (let bar = Math.floor(b0 / bpb); bar * bpb <= b1; bar++) {
-    const x = beatToX(bar * bpb);
+  const mb0 = tmM(b0), mb1 = tmM(b1);
+  for (let bar = Math.floor(mb0 / bpb); bar * bpb <= mb1; bar++) {
+    const x = beatToX(tmU(bar * bpb));
     const major = bar % barEvery === 0;
     ctx.fillStyle = major ? "#3a4050" : "#23272f";
     ctx.fillRect(Math.round(x), major ? 0 : 12, 1, major ? 22 : 10);

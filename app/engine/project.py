@@ -15,7 +15,7 @@ from . import cleanup, drums, harmony, midi_export, rhythm, samples, separation,
 from .jsonio import read_json, write_json
 from .transcribe import Note, Transcriber
 
-VERSION = "2.4.0"
+VERSION = "2.8.0"
 ANALYSIS_SR = 22050
 
 GRIDS = {"off": 0, "1/4": 1.0, "1/8": 0.5, "1/16": 0.25, "1/32": 0.125, "1/8T": 1 / 3, "1/16T": 1 / 6}
@@ -875,19 +875,41 @@ def export(pid: str, options: dict | None = None) -> dict:
             (out / f"{slugify(p['title'])} - mix.mp3").write_bytes(data)
         except Exception:
             pass
+        meta = options.get("meta") or {}
+        if any(str(v).strip() for v in meta.values()):
+            from . import daw_export as DX
+
+            cov = pdir / "cover.jpg"
+            try:
+                if (out / f"{slugify(p['title'])} - mix.mp3").exists():
+                    DX.tag_mp3(out / f"{slugify(p['title'])} - mix.mp3", meta, cov if meta.get("cover", True) else None)
+                DX.tag_wav(out / f"{slugify(p['title'])} - mix.wav", meta)
+            except Exception:
+                pass
+            p.setdefault("release", {}).update({k: v for k, v in meta.items() if k != "cover"})
+            save_project(p)
     ed = options.get("edited")
     if ed:
-        etracks = [cond()]
+        base = float(tm["bpm"])
+        segs = midi_export.tempo_segs(base, options.get("tempo"))
+        if len(segs) > 1 or abs(segs[0][2] - base) > 1e-6:
+            tms = [(sg[1], sg[2]) for sg in segs]
+            emk = [(midi_export.to_musical(segs, base, u), n) for u, n in markers]
+            econd = lambda: midi_export.conductor(segs[0][2], tm["bpb"], b["key"], emk, p["title"], tms)
+        else:
+            econd = cond
+        etracks = [econd()]
         for i, t in enumerate(ed):
             ch = 9 if t.get("is_drums") else mel_ch[i % len(mel_ch)]
             notes = [tuple(n) for n in t["notes"]]
-            trk = midi_export.note_track(t["name"], notes, ch, None if t.get("is_drums") else t.get("program"),
-                                         b["end_beat"])
+            cc, eb = t.get("cc"), b["end_beat"]
+            if econd is not cond:
+                notes, cc, eb = midi_export.remap_notes(notes, cc, eb, segs, base)
+            trk = midi_export.note_track(t["name"], notes, ch, None if t.get("is_drums") else t.get("program"), eb, cc)
             etracks.append(trk)
             midi_export.write(out / "MIDI (edited arrangement)" / f"{i + 1:02d} {slugify(t['name'])}.mid",
-                              [cond(), midi_export.note_track(t["name"], notes, ch,
-                                                              None if t.get("is_drums") else t.get("program"),
-                                                              b["end_beat"])])
+                              [econd(), midi_export.note_track(t["name"], notes, ch,
+                                                               None if t.get("is_drums") else t.get("program"), eb, cc)])
         midi_export.write(out / f"{slugify(p['title'])} - edited arrangement.mid", etracks)
 
     kit = get_kit(pid)
@@ -915,8 +937,56 @@ def export(pid: str, options: dict | None = None) -> dict:
             "tracks": [{"name": t["name"], "notes": len(t["notes"]), "file": f}
                        for t, f in zip(enabled, files)]}
     write_json(out / "song_info.json", info)
+    daw = options.get("daw") or {}
+    if daw.get("rpp") or daw.get("dawproject"):
+        try:
+            _daw_projects(p, b, tm, out, options, daw)
+        except Exception as e:
+            (out / "daw_export_error.txt").write_text(str(e), encoding="utf-8")
     (out / "ЯК ВІДКРИТИ В ІНШИХ ПРОГРАМАХ.txt").write_text(_guide(p, b, tm, enabled), encoding="utf-8")
     return {"path": str(out), "files": sorted(str(x.relative_to(out)) for x in out.rglob("*") if x.is_file())}
+
+
+def _daw_projects(p, b, tm, out: Path, options: dict, daw: dict):
+    from . import daw_export as DX
+    from .jsonio import read_json
+
+    mix = {}
+    try:
+        mix = read_json(out.parent.parent / "mix.json") or {}
+    except Exception:
+        mix = {}
+    mtr = (mix.get("tracks") or {}) if isinstance(mix, dict) else {}
+    rend = out / "Rendered (InkBeat edits)"
+    stems = out / "Stems (aligned)"
+    tracks = []
+    audio_names = set()
+    for i, t in enumerate([x for x in b["tracks"] if not x.get("virtual")]):
+        slug = slugify(t["name"])
+        wav = None
+        if rend.exists():
+            wav = next((f for f in sorted(rend.glob("*.wav")) if f.stem.split(" ", 1)[-1] == slug and not f.name.startswith("00 ")), None)
+        if wav is None and stems.exists():
+            wav = next((f for f in sorted(stems.glob("*.wav")) if f.stem.split(" ", 1)[-1] == slug), None)
+        if wav is None:
+            continue
+        m = mtr.get(t["id"], {})
+        tracks.append({"name": t["name"], "color": t.get("color"), "wav": str(wav.relative_to(out)).replace("\\", "/"), "wav_abs": wav,
+                       "vol_db": 0 if rend.exists() else m.get("vol", 0), "pan": 0 if rend.exists() else m.get("pan", 0), "mute": bool(m.get("mute"))})
+        audio_names.add(t["name"])
+    ed = options.get("edited")
+    src = ed if ed else [{"name": t["name"], "notes": t["notes"], "is_drums": t["is_drums"]} for t in b["tracks"] if t["enabled"] and t["notes"]]
+    for t in src:
+        if not t.get("notes"):
+            continue
+        dup = t["name"] in audio_names
+        tracks.append({"name": t["name"] + (" (MIDI)" if dup else ""), "color": next((x.get("color") for x in b["tracks"] if x["name"] == t["name"]), "#8888ff"),
+                       "notes": [list(n) for n in t["notes"]], "is_drums": bool(t.get("is_drums")), "mute": dup})
+    title = slugify(p["title"])
+    if daw.get("rpp"):
+        DX.write_rpp(out / f"{title} - Reaper.rpp", p["title"], tm["bpm"], tm["bpb"], tracks, b["end_beat"])
+    if daw.get("dawproject"):
+        DX.write_dawproject(out / f"{title}.dawproject", p["title"], tm["bpm"], tm["bpb"], tracks, b["end_beat"], VERSION)
 
 
 def _guide(p, b, tm, enabled) -> str:

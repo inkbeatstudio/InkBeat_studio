@@ -123,7 +123,7 @@ function arranged(t) {
   _arrCache.set(t.id, out);
   return out;
 }
-const laneHeight = (t) => (S.laneH[t.id] || (S.sel === t.id ? 170 : t.is_drums ? 92 : 76)) + autoH(t);
+const laneHeight = (t) => (typeof groupFolded === "function" && groupFolded(t)) ? 0 : (S.laneH[t.id] || (S.sel === t.id ? 170 : t.is_drums ? 92 : 76)) + autoH(t);
 const modeOf = (t) => S.mix && mt(t.id) && mt(t.id).mode || (t.has_audio ? S.listen : "midi");
 const anySolo = () => tracksAll().some((t) => mt(t.id).solo);
 const audible = (t) => {
@@ -379,8 +379,8 @@ function drawBody() {
     ctx.fillRect(x0, 0, x1 - x0, h);
   }
   const step = gridStep();
-  for (let b = Math.floor(b0 / step) * step; b <= b1; b += step) {
-    const x = Math.round(beatToX(b));
+  for (let b = Math.floor(tmM(b0) / step) * step, mE = tmM(b1); b <= mE; b += step) {
+    const x = Math.round(beatToX(tmU(b)));
     const isBar = Math.abs(b / bpb - Math.round(b / bpb)) < 1e-6, isBeat = Math.abs(b - Math.round(b)) < 1e-6;
     ctx.fillStyle = isBar ? "#262a34" : isBeat ? "#191c23" : "#14161b";
     ctx.fillRect(x, 0, 1, h);
@@ -518,7 +518,7 @@ function drawDrumsArr(ctx, t, notes, y, lh, b0, b1) {
 S.tool = "select";
 S.snap = 1;
 S.clipboard = null;
-const snapB = (b, force) => S.snap && !force ? Math.round(b / S.snap) * S.snap : b;
+const snapB = (b, force) => S.snap && !force ? tmU(Math.round(tmM(b) / S.snap) * S.snap) : b;
 function hitClip(e) {
   const r = body.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
   let acc = 0;
@@ -856,6 +856,7 @@ async function loadInstrumentBuffers(ctx) {
   for (const t of tracksAll()) {
     const inst = mt(t.id).inst;
     if (!inst) continue;
+    if (inst.type === "multi") for (const z of inst.zones || []) if (!A.ibuf.has("multi:" + z.file) && !need.some((x) => x[0] === "multi:" + z.file)) need.push(["multi:" + z.file, `/api/project/${S.pid}/sample?f=${encodeURIComponent(z.file)}`]);
     if (inst.type === "sampler" && inst.sample && !A.ibuf.has("sample:" + inst.sample)) need.push(["sample:" + inst.sample, `/api/project/${S.pid}/sample?f=${encodeURIComponent(inst.sample)}`]);
     if (inst.type === "drums" && inst.kit === "song" && kit) {
       const map = { kick: "Kick", snare: "Snare", hat: "Closed Hat", openhat: "Open Hat", crash: "Crash", ride: "Ride", tom: "Tom" };
@@ -1001,7 +1002,7 @@ function play() {
     }
     A.ptr[t.id] = lowerBound(arranged(t), S.startBeat - 1e-6);
   }
-  A.nextMetro = Math.ceil(S.startBeat - 1e-6);
+  A.nextMetro = Math.ceil(tmM(S.startBeat) - 1e-6);
   applyGains();
   scheduleAutomation(ctx, S.startBeat, S.startCtx);
   S.playing = true;
@@ -1068,7 +1069,8 @@ function tick() {
 }
 function updatePos() {
   if (!S.B) return;
-  const bpb = S.B.timing.bpb, b = S.playBeat;
+  const bpb = S.B.timing.bpb, b = tmM(S.playBeat);
+  if (tmActive() || S._tmWas) { const rb = $("#ro-bpm"), v = tmFmt(tmBpmAt(S.playBeat)); if (rb && rb.textContent !== v) rb.textContent = v; S._tmWas = tmActive(); }
   $("#ro-pos").textContent = `${Math.floor(b / bpb) + 1}.${Math.floor(b % bpb) + 1}.${Math.floor(b % 1 * 4) + 1}`;
 }
 function lowerBound(notes, b) {
@@ -1084,7 +1086,7 @@ function schedule() {
   const A = S.audio, ctx = A.ctx, P = period();
   const horizon = ctx.currentTime + 0.15, hBeat = S.startBeat + (horizon - S.startCtx) / P;
   for (const t of tracksAll()) {
-    const notes = arranged(t), st = A.strips[t.id];
+    const notes = playNotes(t), st = A.strips[t.id];
     const mode = modeOf(t);
     if (!st || !(mode === "midi" || mode === "both") || !audible(t) || S.frozen && S.frozen[t.id]) {
       A.ptr[t.id] = lowerBound(notes, hBeat);
@@ -1094,14 +1096,14 @@ function schedule() {
     const inst = mt(t.id).inst;
     while (i < notes.length && notes[i][0] < hBeat) {
       const n = notes[i], when = S.startCtx + (n[0] - S.startBeat) * P;
-      if (when >= ctx.currentTime - 0.01) DSP.playNote(ctx, st.mIn, inst, n[2], n[3] / 127, Math.max(when, ctx.currentTime), n[1] * P, A.ibuf);
+      if (when >= ctx.currentTime - 0.01) DSP.playNote(ctx, st.mIn, inst, n[2], n[3] / 127, Math.max(when, ctx.currentTime), n[1] * P, A.ibuf, noteMods(t, n, (b) => S.startCtx + (b - S.startBeat) * P));
       i++;
     }
     A.ptr[t.id] = i;
   }
   if (S.metro) {
-    while (A.nextMetro < hBeat) {
-      const when = S.startCtx + (A.nextMetro - S.startBeat) * P;
+    while (tmU(A.nextMetro) < hBeat) {
+      const when = S.startCtx + (tmU(A.nextMetro) - S.startBeat) * P;
       if (when >= ctx.currentTime - 0.01) {
         const o = ctx.createOscillator(), g = ctx.createGain(), acc = A.nextMetro % S.B.timing.bpb === 0;
         o.frequency.value = acc ? 1760 : 1180;
@@ -1114,7 +1116,7 @@ function schedule() {
       }
       A.nextMetro++;
     }
-  } else A.nextMetro = Math.ceil(hBeat);
+  } else A.nextMetro = Math.ceil(tmM(hBeat));
 }
 function drawMeters() {
   const A = S.audio;
@@ -1156,7 +1158,7 @@ function dockTarget() {
   return t ? { t, m: mt(t.id), name: t.name, color: t.color } : null;
 }
 function renderDock() {
-  const dock = $("#dock");
+  const dock = DK.cur ? DK.cur.box : $("#dock");
   if (!dock || !S.B || !S.mix) return;
   dock.hidden = !S.dockOpen;
   $("#t-dock").classList.toggle("on", S.dockOpen);
@@ -1165,7 +1167,7 @@ function renderDock() {
     return;
   }
   const T = dockTarget();
-  const head = $("#dock-head"), bodyEl = $("#dock-body");
+  const head = DK.cur ? DK.cur.head : $("#dock-head"), bodyEl = DK.cur ? DK.cur.body : $("#dock-body");
   if (!T) {
     head.innerHTML = `<b>Канал</b><span class="muted">— виберіть доріжку зліва або</span><button class="btn ghost sm" id="dk-master">Master</button>`;
     bodyEl.innerHTML = `<div class="dock-empty">Тут з'являться ефекти, інструмент і обробка вибраної доріжки. Клацніть на назву доріжки ліворуч.</div>`;
@@ -1400,7 +1402,7 @@ function renderInstTab(el, T) {
   const warn = t.has_audio && mode === "audio" ? `<div class="inst-warn">Зараз ця доріжка звучить оригіналом. Щоб чути інструмент, натисніть <b>ОРИГ</b> на доріжці (стане MIDI або РАЗОМ) або <button class="link" id="to-midi">увімкнути MIDI тут</button>.</div>` : "";
   el.innerHTML = `${stripHTML(T)}<div class="inst">
     ${warn}
-    <div class="inst-type">${[["synth", "Синтезатор", "Багато пресетів: піаніно, бас, пади, ліди, струнні…"], ["sampler", "Семплер (звук з пісні)", "Грає нотами будь-який семпл, вирізаний з цієї пісні"], ["drums", "Драм-кіт", "Удари з пісні або синтезовані 808 / акустичні"]].map(([k, l, h]) => `<button data-it="${k}" class="${inst.type === k ? "active" : ""}" data-hint="${h}">${l}</button>`).join("")}</div>
+    <div class="inst-type">${[["synth", "Синтезатор", "Багато пресетів: піаніно, бас, пади, ліди, струнні…"], ["sampler", "Семплер (звук з пісні)", "Грає нотами будь-який семпл, вирізаний з цієї пісні"], ["drums", "Драм-кіт", "Удари з пісні або синтезовані 808 / акустичні"], ["multi", "Бібліотека SF2 / SFZ", "Реалістичні інструменти з файлів SoundFont (.sf2) чи SFZ: піаніно, струнні, гітари, духові, барабани"]].map(([k, l, h]) => `<button data-it="${k}" class="${inst.type === k ? "active" : ""}" data-hint="${h}">${l}</button>`).join("")}</div>
     <div id="inst-body"></div>
     <div class="kbd-strip" id="kbd" data-hint="Клацніть клавішу — почуєте інструмент"></div>
   </div>`;
@@ -1417,6 +1419,7 @@ function renderInstTab(el, T) {
     pushUndo("тип інструмента");
     if (b.dataset.it === "synth") m.inst = { type: "synth", preset: "Плак", params: Plugins.presetByName("Плак") };
     else if (b.dataset.it === "drums") m.inst = { type: "drums", kit: "song", pads: {} };
+    else if (b.dataset.it === "multi") m.inst = Object.assign({ type: "multi", lib: null, preset: null, name: "", zones: [], params: { gain: 1, attack: 1, release: 1, vel: 0.7, tune: 0 } }, UIP.lastMulti && UIP.lastMulti.zones ? { lib: UIP.lastMulti.lib, preset: UIP.lastMulti.preset, name: UIP.lastMulti.name } : {});
     else m.inst = { type: "sampler", sample: null, params: { root: 60, tune: 0, gain: 0.8, amp: { a: 2e-3, d: 0.2, s: 1, r: 0.2 }, oneshot: false } };
     afterEdit();
     renderDock();
@@ -1425,6 +1428,7 @@ function renderInstTab(el, T) {
   const box = $("#inst-body");
   if (inst.type === "synth") renderSynth(box, T);
   else if (inst.type === "sampler") renderSampler(box, T);
+  else if (inst.type === "multi") renderMulti(box, T);
   else renderDrums(box, T);
   renderKeyboard($("#kbd"), T);
 }
@@ -1675,13 +1679,43 @@ const PROC = {
   },
   normalize: { name: "Нормалізація", icon: "⇕", desc: "Піднімає гучність так, щоб найгучніше місце було на заданому рівні.", params: () => [{ k: "peak_db", label: "Пік", min: -12, max: 0, step: 0.1, unit: "дБ" }], defaults: () => ({ peak_db: -1 }), presets: {} },
   gain: { name: "Гучність запису", icon: "±", desc: "Змінює гучність самого запису (до ефектів).", params: () => [{ k: "db", label: "Гучність", min: -24, max: 24, step: 0.1, unit: "дБ" }], defaults: () => ({ db: 3 }), presets: {} },
-  reverse: { name: "Реверс", icon: "⇆", desc: "Розвертає запис задом наперед — для ефектних переходів (наприклад, реверс-тарілка або вокал).", params: () => [], defaults: () => ({}), presets: {} }
+  reverse: { name: "Реверс", icon: "⇆", desc: "Розвертає запис задом наперед — для ефектних переходів (наприклад, реверс-тарілка або вокал).", params: () => [], defaults: () => ({}), presets: {} },
+  stretch: {
+    name: "Розтягнути в часі",
+    icon: "⟷",
+    desc: "Змінює темп запису без зміни тону. «Підігнати під проєкт» — програма сама визначить темп лупа чи семпла й підтягне його під темп пісні. Кліпи на доріжці розтягнуться разом зі звуком.",
+    params: () => [
+      { k: "mode", label: "Як", options: [["fit", "підігнати під темп проєкту (авто)"], ["bpm", "з одного темпу в інший"], ["speed", "швидкість у відсотках"]] },
+      { k: "from_bpm", label: "Темп запису", min: 40, max: 240, step: 0.1, unit: "BPM", hint: "Для «з одного темпу в інший». У режимі «підігнати» визначається сам" },
+      { k: "to_bpm", label: "Новий темп", min: 40, max: 240, step: 0.1, unit: "BPM", hint: "За замовчуванням — темп проєкту" },
+      { k: "speed", label: "Швидкість", min: 50, max: 200, step: 1, unit: "%", hint: "Для режиму «швидкість»: 50% — удвічі повільніше, 200% — удвічі швидше" },
+      { k: "keep_pitch", label: "Тон", options: [["1", "зберегти тон"], ["0", "як платівка (тон змінюється разом із швидкістю)"]] }
+    ],
+    defaults: () => ({ mode: "fit", from_bpm: Math.round(S.B.timing.bpm * 10) / 10, to_bpm: Math.round(S.B.timing.bpm * 10) / 10, speed: 100, keep_pitch: "1" }),
+    presets: { "Під темп проєкту": { mode: "fit" }, "Повільніше 90%": { mode: "speed", speed: 90 }, "Halftime 50%": { mode: "speed", speed: 50 }, "Швидше 110%": { mode: "speed", speed: 110 } }
+  },
+  formant: {
+    name: "Тембр голосу",
+    icon: "◐",
+    desc: "Змінює характер голосу, не змінюючи мелодію: нижче — грубіший, «чоловічий» тембр, вище — легший, «жіночий». Плюс готові образи: дабл-трек, телефон, радіо, робот.",
+    params: () => [
+      { k: "shift", label: "Тембр", min: -6, max: 6, step: 0.1, unit: "пт", hint: "Мінус — нижчий, грубіший; плюс — вищий, легший. Мелодія не змінюється" },
+      { k: "character", label: "Образ", options: [["none", "без образу"], ["double", "дабл-трек (ширше, щільніше)"], ["phone", "телефон"], ["radio", "старе радіо"], ["robot", "робот"]] },
+      { k: "mix", label: "Мікс з оригіналом", min: 0, max: 1, step: 0.01, pct: true, unit: "%" }
+    ],
+    defaults: () => ({ shift: -2, character: "none", mix: 1 }),
+    presets: { "Грубіше": { shift: -3, character: "none" }, "Легше": { shift: 3, character: "none" }, "Дабл-трек": { shift: 0, character: "double" }, "Телефон": { shift: 0, character: "phone" }, "Радіо": { shift: 0, character: "radio" }, "Робот": { shift: 0, character: "robot" } }
+  }
 };
 function renderProcTab(el, T) {
   const m = T.m, v = m.source && S.versions && S.versions[m.source];
   el.innerHTML = `${stripHTML(T)}<div class="proc">
     <div class="proc-state">${v ? `Зараз звучить: <b>${escapeHtml(v.chain.join(" → "))}</b> <button class="link" id="pr-orig">повернути оригінал</button>` : "Зараз звучить: <b>оригінальний стем</b>. Кожна обробка створює нову версію — оригінал не змінюється."}</div>
     <div class="proc-grid">${Object.entries(PROC).map(([k, d]) => `<button class="proc-card" data-op="${k}" data-hint="${escapeHtml(d.desc)}"><span class="pi">${d.icon}</span><b>${escapeHtml(d.name)}</b><span class="muted small">${escapeHtml(d.desc.split(".")[0])}.</span></button>`).join("")}</div>
+    <div class="proc-notes"><b>Перетворити на ноти</b><span class="muted small">Створює нову MIDI-доріжку з цього запису. Якщо виділити кліп — візьметься лише він.</span>
+      <button class="btn ghost sm" id="pr-hum" data-hint="Наспівали чи насвистіли мелодію — програма розпізнає ноти й створить MIDI-доріжку, якій можна дати будь-який інструмент">♪ Наспівав → ноти</button>
+      <button class="btn ghost sm" id="pr-bb" data-hint="Бітбокс або постукування: програма розпізнає бочку, малий і хети й створить барабанну доріжку">🥁 Бітбокс → барабани</button>
+      <button class="btn ghost sm" id="pr-slice" data-hint="Нарізати виділений кліп (або фрагмент у циклі) по ударах на пади: кожен шматок — окрема клавіша. З них можна зібрати новий біт">✂ Нарізати на пади</button></div>
     <p class="muted small">Обробка застосовується до поточної версії звуку цієї доріжки (можна робити кілька підряд: шумоподавлення → автотюн → де-есер). Ефекти з вкладки «Ефекти» діють поверх.</p></div>`;
   bindStrip(T);
   const o = $("#pr-orig");
@@ -1693,6 +1727,45 @@ function renderProcTab(el, T) {
     renderDock();
   };
   $$("[data-op]", el).forEach((b) => b.onclick = () => openProcess(b.dataset.op));
+  $("#pr-hum").onclick = () => audioToNotes(T, "melody");
+  $("#pr-bb").onclick = () => audioToNotes(T, "drums");
+  $("#pr-slice").onclick = () => sliceToPads(T);
+}
+async function audioToNotes(T, kind) {
+  if (!T || !T.t || !T.t.has_audio) return toast("Виберіть доріжку із записом.");
+  const t = T.t, m = T.m, P = period();
+  const sc = selectedClips().find((x) => x.t.id === t.id);
+  const body = { base: baseId(t), source: m.source, kind };
+  if (sc) { body.from = sc.c.src; body.to = sc.c.src + sc.c.dur; }
+  toast(kind === "drums" ? "Розпізнаю удари…" : "Розпізнаю ноти мелодії…");
+  try {
+    const r = await api.post(`/api/project/${S.pid}/to_notes`, body);
+    let j;
+    for (;;) {
+      await new Promise((res) => setTimeout(res, 500));
+      j = await api.get(`/api/process/${r.job}`);
+      if (j.status !== "running") break;
+    }
+    if (j.status === "error") throw new Error(j.error);
+    const raw = j.result.notes || [];
+    if (!raw.length) return toast(kind === "drums" ? "Ударів не знайдено. Спробуйте чіткіший запис." : "Нот не знайдено: потрібен чистий одноголосий спів чи свист.", true);
+    const clips = (m.clips || []).filter((c) => !c.mute);
+    const toBeat = (ts) => {
+      const c = clips.find((c) => ts >= c.src && ts < c.src + c.dur) || clips[0];
+      return c ? c.start + (ts - c.src) / P : (ts + S.B.timing.pad) / P;
+    };
+    const notes = raw.map((n) => [Math.max(0, toBeat(n[0])), Math.max(0.0625, n[1] / P), n[2], n[3]]);
+    addMidiTrack(kind === "drums" ? "drums" : "lead");
+    const g = S.mix.gens[S.mix.gens.length - 1];
+    g.notes = notes;
+    g.name = (kind === "drums" ? "Бітбокс → " : "Мелодія з ") + t.name;
+    _tracksKey = "";
+    afterEdit(true);
+    renderDock();
+    toast(`Створено доріжку «${g.name}»: ${notes.length} ${kind === "drums" ? "ударів" : "нот"}. Відредагуйте у вкладці «Ноти», звук — у «Інструмент».`);
+  } catch (e) {
+    toast("Не вдалося: " + e.message, true);
+  }
 }
 function openProcess(op, opts = {}) {
   const T = opts.target || dockTarget() || { t: findT(S.sel), m: mt(S.sel) };
@@ -1750,10 +1823,13 @@ function openProcess(op, opts = {}) {
       pushUndo(d.name);
       S.versions = await api.get(`/api/project/${S.pid}/versions`);
       T.m.source = j.result.vid;
+      const sf = op === "stretch" && j.result.stats && j.result.stats.factor;
+      if (sf && Math.abs(sf - 1) > 1e-4) for (const c of T.m.clips || []) { c.src *= sf; c.dur *= sf; }
       await loadAudio();
       afterEdit(true);
       const stats = j.result.stats || {};
-      toast(`${d.name}: готово${stats.avg_correction_cents ? ` (середня корекція ${stats.avg_correction_cents} центів)` : ""}${stats.gain_db ? ` (${stats.gain_db > 0 ? "+" : ""}${stats.gain_db} дБ)` : ""}. Порівняйте з оригіналом у вкладці «Версії».`);
+      if (op === "stretch" && stats.speed_pct) toast(`Розтягнуто: швидкість ${stats.speed_pct}%${stats.detected_bpm ? `, темп запису визначено як ${stats.detected_bpm} BPM` : ""}.`);
+      else toast(`${d.name}: готово${stats.avg_correction_cents ? ` (середня корекція ${stats.avg_correction_cents} центів)` : ""}${stats.gain_db ? ` (${stats.gain_db > 0 ? "+" : ""}${stats.gain_db} дБ)` : ""}. Порівняйте з оригіналом у вкладці «Версії».`);
       modal.hidden = true;
       S.dockTab = "proc";
       renderDock();
@@ -1928,10 +2004,10 @@ async function renderAll(progress) {
     }
     if (mode === "midi" || mode === "both") {
       await loadInstrumentBuffers();
-      const notes = arranged(t), g = ctx2.createGain();
+      const notes = playNotes(t), g = ctx2.createGain();
       g.gain.value = mode === "both" ? 0.7 : 1;
       g.connect(strip2.input);
-      for (const n of notes) DSP.playNote(ctx2, g, m.inst, n[2], n[3] / 127, n[0] * P, n[1] * P, S.audio.ibuf);
+      for (const n of notes) DSP.playNote(ctx2, g, m.inst, n[2], n[3] / 127, n[0] * P, n[1] * P, S.audio.ibuf, noteMods(t, n, (b) => b * P));
       hasContent = hasContent || notes.length > 0;
     }
     if (!hasContent) continue;
@@ -1984,8 +2060,19 @@ async function renderAll(progress) {
   fd.append("name", "00 Full mix (InkBeat master)");
   await fetch(`/api/project/${S.pid}/render`, { method: "POST", body: fd });
 }
+function exportExtras() {
+  const v = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
+  const rpp = document.getElementById("ex-rpp"), dp = document.getElementById("ex-dawp"), md = document.querySelector(".ex-meta");
+  if (rpp) UIP.exRpp = rpp.checked;
+  if (dp) UIP.exDawp = dp.checked;
+  if (md) UIP.exMetaOpen = md.open;
+  if (v("exm-artist")) UIP.exArtist = v("exm-artist");
+  saveUI();
+  const meta = document.getElementById("exm-title") ? { title: v("exm-title"), artist: v("exm-artist"), album: v("exm-album"), year: v("exm-year"), genre: v("exm-genre"), isrc: v("exm-isrc"), comment: "InkBeat", cover: !!(document.getElementById("exm-cover") || {}).checked } : null;
+  return { daw: { rpp: !!(rpp && rpp.checked), dawproject: !!(dp && dp.checked) }, meta };
+}
 function editedMidi() {
-  return tracksAll().filter((t) => (t.enabled || t.clone) && arranged(t).length && !mt(t.id).mute).map((t) => ({ name: t.name, program: t.program, is_drums: t.is_drums, notes: arranged(t).map((n) => [+n[0].toFixed(5), +n[1].toFixed(5), n[2], n[3]]) }));
+  return tracksAll().filter((t) => (t.enabled || t.clone) && arranged(t).length && !mt(t.id).mute).map((t) => ({ name: t.name, program: t.program, is_drums: t.is_drums, notes: arranged(t).map((n) => [+n[0].toFixed(5), +n[1].toFixed(5), n[2], n[3]]), cc: mt(t.id).cc || null }));
 }
 $("#export-btn").addEventListener("click", () => {
   const modal = $("#export-modal");
@@ -1996,6 +2083,21 @@ $("#export-btn").addEventListener("click", () => {
     <label class="ex-opt"><input type="checkbox" id="ex-render" ${edits ? "checked" : ""}> <span><b>Записати мої зміни у WAV</b> — ефекти, обробку (автотюн, шумоподавлення…), різання й переміщення кліпів, інструменти. Кожна доріжка окремо + повний мікс з Master. ${edits ? "" : "<span class='muted'>(змін поки немає)</span>"}</span></label>
     <label class="ex-opt"><input type="checkbox" id="ex-midi" ${edits ? "checked" : ""}> <span><b>MIDI мого аранжування</b> — ноти з урахуванням вирізаних, переміщених і продубльованих кліпів.</span></label>
     <label class="ex-opt"><input type="checkbox" id="ex-mix" checked> <span><b>Готовий мікс у MP3 (320 кбіт/с) і WAV</b> — один файл усієї пісні з ефектами й Master, щоб одразу викласти чи надіслати.</span></label>
+    <div class="ex-sec"><b>Проєкт для інших програм</b>
+      <label class="ex-opt"><input type="checkbox" id="ex-rpp" ${UIP.exRpp !== false ? "checked" : ""}> <span><b>Reaper (.rpp)</b> — відкривається одним кліком: усі доріжки на своїх місцях, MIDI-партії, темп і розмір. Маленький файл, звук береться з папки експорту.</span></label>
+      <label class="ex-opt"><input type="checkbox" id="ex-dawp" ${UIP.exDawp ? "checked" : ""}> <span><b>DAWproject</b> — відкритий формат для Bitwig Studio, Studio One, Cubase та інших програм, що його підтримують. Звук вкладено у файл, тож він займає стільки ж, скільки всі доріжки.</span></label>
+    </div>
+    <details class="ex-sec ex-meta" ${UIP.exMetaOpen ? "open" : ""}><summary><b>Дані релізу</b> <span class="muted small">— назва, виконавець, обкладинка в MP3 / WAV</span></summary>
+      <div class="ex-meta-g">
+        <label>Назва<input id="exm-title" value="${escapeHtml((S.B.project.release && S.B.project.release.title) || S.B.project.title)}"></label>
+        <label>Виконавець<input id="exm-artist" value="${escapeHtml((S.B.project.release && S.B.project.release.artist) || UIP.exArtist || "")}" placeholder="Ваше ім'я або псевдонім"></label>
+        <label>Альбом / сингл<input id="exm-album" value="${escapeHtml((S.B.project.release && S.B.project.release.album) || "")}"></label>
+        <label>Рік<input id="exm-year" value="${escapeHtml((S.B.project.release && S.B.project.release.year) || String(new Date().getFullYear()))}"></label>
+        <label>Жанр<input id="exm-genre" value="${escapeHtml((S.B.project.release && S.B.project.release.genre) || "")}" placeholder="Поп, хіп-хоп…"></label>
+        <label data-hint="Міжнародний код запису — видає дистриб'ютор. Можна залишити порожнім">ISRC<input id="exm-isrc" value="${escapeHtml((S.B.project.release && S.B.project.release.isrc) || "")}" placeholder="UA-XXX-26-00001"></label>
+      </div>
+      <label class="chk"><input type="checkbox" id="exm-cover" checked> Вставити обкладинку з відеостудії (якщо ви її додавали)</label>
+    </details>
     <div class="ex-actions"><button class="btn primary" id="ex-go">Експортувати</button></div>
     <div id="ex-progress" hidden><div class="pbar"><div id="ex-bar"></div></div><p class="muted" id="ex-step"></p></div>`;
   modal.hidden = false;
@@ -2010,7 +2112,7 @@ $("#export-btn").addEventListener("click", () => {
     try {
       if (doRender) await renderAll(prog);
       prog("Записую пісню, доріжки, MIDI і семпли…", 0.97);
-      const r = await api.post(`/api/project/${S.pid}/export`, { use_render: doRender, mixdown: doMix, edited: doMidi ? editedMidi() : null });
+      const r = await api.post(`/api/project/${S.pid}/export`, Object.assign({ use_render: doRender, mixdown: doMix, edited: doMidi ? editedMidi() : null, tempo: tmExport() }, exportExtras()));
       showExportDone(r);
     } catch (e) {
       $("#ex-title").textContent = "Помилка експорту";
@@ -2031,10 +2133,13 @@ function showExportDone(r) {
       <li><b>Окремі доріжки</b><p>${rendered ? `<span class="kbd">Rendered (InkBeat edits)</span> — кожна доріжка з вашими ефектами й обробкою. ` : ""}<span class="kbd">Stems (aligned)</span> — оригінальні розділені доріжки. Усі WAV починаються з однієї точки, тож у будь-якій програмі просто поставте їх на початок — вони збіжуться між собою й з MIDI.</p></li>
       <li><b>Ноти (MIDI)</b><p>${r.files.some((f) => f.includes("edited arrangement")) ? "Ваше аранжування: <span class='kbd'>… - edited arrangement.mid</span>. Оригінал: " : ""}<span class="kbd">${escapeHtml(mid)}</span> — усі партії, темп ${tm.bpm.toFixed(2)} BPM уже записаний у файл. Окремі партії — у папці <span class="kbd">MIDI</span>.</p></li>
       <li><b>Семпли й лупи</b><p><span class="kbd">Samples</span> — удари барабанів, окремі ноти, вокальні фрази й лупи в темпі, вирізані з пісні.</p></li>
+      ${r.files.some((f) => f.endsWith(".rpp") || f.endsWith(".dawproject")) ? `<li><b>Готовий проєкт</b><p>${r.files.filter((f) => f.endsWith(".rpp") || f.endsWith(".dawproject")).map((f) => `<span class="kbd">${escapeHtml(f)}</span>`).join(" ")} — відкрийте подвійним кліком у Reaper чи програмі з підтримкою DAWproject: доріжки, MIDI й темп уже на місцях.</p></li>` : ""}
     </ol>
+    <div class="ex-arc"><button class="btn ghost sm" id="ex-arc" data-hint="Один файл з усім проєктом — щоб перенести на інший комп'ютер або надіслати другові, у якого теж є InkBeat">Зберегти архів проєкту (.inkbeat)</button></div>
     <div class="ex-daw"><b>Продовжити в іншій програмі</b><p class="muted small">WAV і MIDI — стандартні формати, тож проєкт відкривається в будь-якій музичній програмі. Покрокова інструкція для кожної з них — у файлі <span class="kbd">ЯК ВІДКРИТИ В ІНШИХ ПРОГРАМАХ.txt</span> у цій папці.</p><div class="ex-daw-list">${daws.map((d) => `<span>${d}</span>`).join("")}<span>та інші</span></div></div>
     <details><summary class="muted small" style="cursor:pointer;margin-top:12px">Усі файли (${r.files.length})</summary><div class="filetree">${r.files.map(escapeHtml).join("<br>")}</div></details>`;
   $("#ex-open").onclick = () => api.post(`/api/project/${S.pid}/open`);
+  $("#ex-arc").onclick = () => archiveProject();
 }
 function setTool(t) {
   S.tool = t;
@@ -2071,7 +2176,7 @@ function typingIn(el) {
 }
 document.addEventListener("keydown", (e) => {
   if (S.view !== "project" || typingIn(e.target)) return;
-  if (document.querySelector(".modal:not([hidden])") && !e.ctrlKey && !e.metaKey) return;
+  if (document.querySelector(".modal:not([hidden]):not(.floatm)") && !e.ctrlKey && !e.metaKey) return;
   const k = e.key.toLowerCase(), ctrl = e.ctrlKey || e.metaKey;
   if (e.code === "Space") {
     e.preventDefault();
@@ -2112,3 +2217,4 @@ document.addEventListener("keydown", (e) => {
   }
 });
 $$("[data-close]").forEach((b) => b.addEventListener("click", () => b.closest(".modal").hidden = true));
+

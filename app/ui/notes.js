@@ -15,7 +15,8 @@ function notesChanged() {
   renderHeads();
   draw();
 }
-const PR = { ppb: 48, x0: 0, top: 84, rowH: 11, tool: "draw", snap: 0.25, sel: new Set(), lastLen: 0.5, tid: null };
+const PR = { ppb: 48, x0: 0, top: 84, rowH: 11, tool: "draw", snap: 0.25, sel: new Set(), lastLen: 0.5, tid: null, lane: "vel" };
+const CC_LANES = { vel: ["Гучність нот", "Сила (гучність) кожної ноти"], "64": ["Педаль сустейну", "Педаль: поки натиснута — ноти звучать далі. Малюйте вгорі — натиснута, внизу — відпущена"], "1": ["Модуляція (вібрато)", "Колесо модуляції: глибина вібрато"], pb: ["Pitch bend", "Плавне підтягування висоти: вгору — вище, вниз — нижче (±2 півтони)"] };
 function renderNotesTab(el, T) {
   const t = T.t;
   if (PR.tid !== t.id) {
@@ -40,6 +41,8 @@ function renderNotesTab(el, T) {
       <button class="btn ghost sm" id="pr-short" data-hint="Видалити дуже короткі ноти (коротші за 1/32)">Прибрати короткі</button>
       <button class="btn ghost sm" id="pr-legato" data-hint="Подовжити виділені ноти до початку наступних">Легато</button>
       <button class="btn ghost sm" id="pr-del" data-hint="Видалити виділені ноти (Delete)">Видалити</button>
+      <select id="pr-lane" data-hint="Що показує нижня смуга: гучність нот, педаль сустейну, модуляція чи pitch bend">${Object.entries(CC_LANES).map(([k, v]) => `<option value="${k}" ${PR.lane === k ? "selected" : ""}>${v[0]}</option>`).join("")}</select>
+      ${PR.lane !== "vel" ? `<button class="btn ghost sm" id="pr-ccclr" data-hint="Прибрати всю лінію «${CC_LANES[PR.lane][0]}» з цієї доріжки">Очистити лінію</button>` : ""}
       <span class="spacer"></span>
       <span class="muted small" id="pr-info"></span>
       <button class="btn ghost sm" id="pr-reset" data-hint="Скасувати всі ручні зміни нот і повернути розпізнані">Скинути</button>
@@ -49,7 +52,9 @@ function renderNotesTab(el, T) {
   </div>`;
   bindStrip(T);
   const cv = $("#pr-cv");
-  const KB = 46, VEL = 46, RUL = 16;
+  const KB = 46, VEL = PR.lane === "vel" ? 46 : 78, RUL = 16;
+  const lane = PR.lane;
+  const ccEv = (make) => { const m = mt(t.id); if (!m.cc && make) m.cc = {}; return m.cc ? (m.cc[lane] || (make ? (m.cc[lane] = []) : null)) : null; };
   const DRUM_NAMES = { 35: "Бочка 2", 36: "Бочка", 37: "Rim", 38: "Малий", 39: "Клеп", 40: "Малий 2", 41: "Том низ.", 42: "Хет закр.", 43: "Том", 44: "Хет пед.", 45: "Том", 46: "Хет відкр.", 47: "Том сер.", 48: "Том", 49: "Тарілка", 50: "Том вис.", 51: "Райд", 57: "Тарілка 2" };
   const notes = () => trackNotes(t);
   const P2 = period();
@@ -59,7 +64,7 @@ function renderNotesTab(el, T) {
   const xb = (x) => PR.x0 + (x - KB) / PR.ppb;
   const py = (p) => RUL + (PR.top - p) * PR.rowH;
   const yp = (y) => Math.round(PR.top - (y - RUL) / PR.rowH + 0.5 - 0.5);
-  const snapv = (b, alt) => !PR.snap || alt ? b : Math.round(b / PR.snap) * PR.snap;
+  const snapv = (b, alt) => !PR.snap || alt ? b : tmU(Math.round(tmM(b) / PR.snap) * PR.snap);
   function info() {
     const el = $("#pr-info"); if (!el) return;
     el.textContent = `${notes().length} нот${PR.sel.size ? ` · виділено ${PR.sel.size}` : ""}${mt(t.id).notes ? " · змінено вручну" : ""}`;
@@ -79,8 +84,8 @@ function renderNotesTab(el, T) {
     }
     const bpb = S.B.timing.bpb, b0 = PR.x0, b1 = xb(w);
     const step = PR.ppb > 120 ? 0.25 : PR.ppb > 50 ? 0.5 : 1;
-    for (let b = Math.floor(b0 / step) * step; b <= b1; b += step) {
-      const x = Math.round(bx(b)), bar = Math.abs(b / bpb - Math.round(b / bpb)) < 1e-6, beat = Math.abs(b - Math.round(b)) < 1e-6;
+    for (let b = Math.floor(tmM(b0) / step) * step, mE = tmM(b1); b <= mE; b += step) {
+      const x = Math.round(bx(tmU(b))), bar = Math.abs(b / bpb - Math.round(b / bpb)) < 1e-6, beat = Math.abs(b - Math.round(b)) < 1e-6;
       c.fillStyle = bar ? "#2c313d" : beat ? "#1d2028" : "#171a20"; c.fillRect(x, RUL, 1, gh + VEL);
       if (bar) { c.fillStyle = "#8b91a3"; c.font = "10px ui-monospace,Consolas"; c.fillText(String(Math.round(b / bpb) + 1), x + 3, 11); }
     }
@@ -95,10 +100,32 @@ function renderNotesTab(el, T) {
       c.fillStyle = sel ? "#ffb547" : col; c.fillRect(Math.max(KB, x), y + 1, ww - Math.max(0, KB - x), PR.rowH - 2);
       c.globalAlpha = 1;
       if (sel) { c.strokeStyle = "#fff"; c.strokeRect(Math.max(KB, x) + 0.5, y + 1.5, ww - Math.max(0, KB - x) - 1, PR.rowH - 3); }
-      const vx = Math.max(KB, x), vh = (n[3] / 127) * (VEL - 8);
-      c.fillStyle = sel ? "#ffb547" : col; c.fillRect(vx, RUL + gh + VEL - 3 - vh, 3, vh);
+      if (lane === "vel") { const vx = Math.max(KB, x), vh = (n[3] / 127) * (VEL - 8); c.fillStyle = sel ? "#ffb547" : col; c.fillRect(vx, RUL + gh + VEL - 3 - vh, 3, vh); }
     });
-    c.fillStyle = "#4b5160"; c.font = "10px sans-serif"; c.fillText("гучність", KB + 4, RUL + gh + 12);
+    if (lane !== "vel") {
+      const y0 = RUL + gh + 4, H = VEL - 8, ev = ccEv(false) || [];
+      const vy = (v) => lane === "pb" ? y0 + H / 2 - v * H / 2 : y0 + H - v * H;
+      if (lane === "pb") { c.fillStyle = "#262a34"; c.fillRect(KB, y0 + H / 2, w - KB, 1); }
+      c.fillStyle = lane === "64" ? "rgba(79,209,197,.35)" : "rgba(255,181,71,.3)";
+      c.strokeStyle = lane === "64" ? "#4fd1c5" : "#ffb547";
+      c.lineWidth = 1.5;
+      c.beginPath();
+      let prevV = 0;
+      const xs = ev.map((e) => [bx(e[0]), e[1]]);
+      c.moveTo(KB, vy(prevV));
+      for (const [x, v] of xs) {
+        if (x < KB) { prevV = v; c.moveTo(KB, vy(v)); continue; }
+        if (x > w) break;
+        if (lane === "64") c.lineTo(x, vy(prevV));
+        c.lineTo(x, vy(v));
+        prevV = v;
+      }
+      c.lineTo(w, vy(prevV));
+      c.stroke();
+      c.lineWidth = 1;
+      for (const [x, v] of xs) if (x >= KB && x <= w) { c.fillStyle = c.strokeStyle; c.fillRect(x - 1.5, vy(v) - 1.5, 3, 3); }
+    }
+    c.fillStyle = "#4b5160"; c.font = "10px sans-serif"; c.fillText(CC_LANES[lane][0].toLowerCase(), KB + 4, RUL + gh + 12);
     for (let r = 0; r < rows; r++) {
       const p = PR.top - r, y = RUL + r * PR.rowH, pc = ((p % 12) + 12) % 12, black = [1, 3, 6, 8, 10].includes(pc);
       c.fillStyle = drums ? "#1b1e26" : black ? "#1b1e26" : "#d9dce3"; c.fillRect(0, y, KB - 2, PR.rowH - 1);
@@ -130,6 +157,38 @@ function renderNotesTab(el, T) {
     const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, { gh } = geo();
     if (x < KB && y > RUL && y < RUL + gh) { audit(yp(y)); return; }
     if (y < RUL) { seek(Math.max(0, xb(x))); return; }
+    if (y > RUL + gh && lane !== "vel") {
+      commitUndo(CC_LANES[lane][0].toLowerCase());
+      const ev = ccEv(true), y0 = RUL + gh + 4, H = VEL - 8, step = PR.snap || 0.125;
+      const valAt = (yy) => {
+        const f = lane === "pb" ? Math.max(-1, Math.min(1, (y0 + H / 2 - yy) / (H / 2))) : Math.max(0, Math.min(1, (y0 + H - yy) / H));
+        return lane === "64" ? (f >= 0.5 ? 1 : 0) : lane === "pb" && Math.abs(f) < 0.06 ? 0 : Math.round(f * 1000) / 1000;
+      };
+      const pts = new Map();
+      const put = (ev2) => {
+        const xx = ev2.clientX - r.left, yy = ev2.clientY - r.top, b = Math.max(0, Math.round(xb(xx) / step) * step);
+        pts.set(b.toFixed(4), [b, valAt(yy)]);
+        const keys = [...pts.values()].map((p) => p[0]), lo = Math.min(...keys), hi = Math.max(...keys);
+        const keep = ev.filter((e) => e[0] < lo - 1e-6 || e[0] > hi + 1e-6);
+        ev.length = 0;
+        ev.push(...keep, ...pts.values());
+        ev.sort((a, b2) => a[0] - b2[0]);
+        paint();
+      };
+      put(e);
+      const up = () => {
+        window.removeEventListener("mousemove", put); window.removeEventListener("mouseup", up);
+        if (lane === "64" && pts.size) {
+          const hi = Math.max(...[...pts.values()].map((p) => p[0])), last = [...pts.values()].sort((a, b2) => a[0] - b2[0]).pop();
+          if (last[1] === 1 && !ev.some((e2) => e2[0] > hi + 1e-6 && e2[0] <= hi + step + 1e-6)) { ev.push([hi + step, 0]); ev.sort((a, b2) => a[0] - b2[0]); }
+        }
+        for (let i = ev.length - 1; i > 0; i--) if (ev[i][1] === ev[i - 1][1]) ev.splice(i, 1);
+        saveMix();
+        paint();
+      };
+      window.addEventListener("mousemove", put); window.addEventListener("mouseup", up);
+      return;
+    }
     if (y > RUL + gh) {
       commitUndo("гучність нот");
       const ns = editableNotes(t);
@@ -239,10 +298,13 @@ function renderNotesTab(el, T) {
   };
   $$("[data-prt]", el).forEach((b) => b.onclick = () => { PR.tool = b.dataset.prt; $$("[data-prt]", el).forEach((x) => x.classList.toggle("active", x === b)); });
   $("#pr-snap").onchange = (e) => { PR.snap = +e.target.value; };
+  $("#pr-lane").onchange = (e) => { PR.lane = e.target.value; renderDock(); };
+  const clr = $("#pr-ccclr");
+  if (clr) clr.onclick = () => { const m = mt(t.id); if (!m.cc || !m.cc[lane]) return; commitUndo("очистити лінію"); delete m.cc[lane]; saveMix(); paint(); };
   $("#pr-q").onclick = () => {
     const ns = editableNotes(t), idx = PR.sel.size ? [...PR.sel] : ns.map((_, i) => i), g = PR.snap || 0.25;
     commitUndo("квантизація нот");
-    idx.forEach((i) => { ns[i][0] = Math.round(ns[i][0] / g) * g; ns[i][1] = Math.max(g / 2, Math.round(ns[i][1] / g) * g || g); });
+    idx.forEach((i) => { const m0 = Math.round(tmM(ns[i][0]) / g) * g, ml = Math.max(g / 2, Math.round((tmM(ns[i][0] + ns[i][1]) - tmM(ns[i][0])) / g) * g || g); ns[i][0] = tmU(m0); ns[i][1] = tmU(m0 + ml) - ns[i][0]; });
     sortKeep(); notesChanged(); paint();
   };
   $("#pr-up").onclick = () => transpose(1);

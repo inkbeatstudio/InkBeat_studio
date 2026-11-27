@@ -243,7 +243,7 @@ const MENUS = {
     ["Аналізатор", needProject(() => openAnalyzer())],
     ["Вокальна студія", needProject(() => openRecorder())],
     null
-  ].concat(layoutItems(), [null, ["Тема, кольори, щільність…", openLookSettings], DESK.on ? ["На весь екран  (F11)", () => DESK.api.fullscreen()] : ["Масштаб: Ctrl + / Ctrl − / Ctrl 0", () => toast("Збільшити: Ctrl +, зменшити: Ctrl −, звичайний розмір: Ctrl 0.")]]),
+  ].concat(layoutItems(), [null, ["Тема, кольори, щільність…", openLookSettings], [LANG === "en" ? "Мова: English → Українська" : "Language: Українська → English", () => setLang(LANG === "en" ? "uk" : "en")], DESK.on ? ["На весь екран  (F11)", () => DESK.api.fullscreen()] : ["Масштаб: Ctrl + / Ctrl − / Ctrl 0", () => toast("Збільшити: Ctrl +, зменшити: Ctrl −, звичайний розмір: Ctrl 0.")]]),
   "Інструменти": () => [
     ["Генератор партій…", needProject(() => openGenerator())],
     ["Темп і тональність…", needProject(openTempoKey)],
@@ -294,15 +294,17 @@ const MENUS = {
 })();
 function openLookSettings() {
   const modal = $("#look-modal"), box = $("#look-body");
-  box.innerHTML = `<div class="look-sec"><h5>Тема</h5><div class="look-themes">${Object.entries(THEMES).map(([k, l]) => `<button class="look-theme t-${k} ${UIP.theme === k ? "active" : ""}" data-th="${k}"><i></i><span>${l}</span></button>`).join("")}</div></div>
+  box.innerHTML = `<div class="look-sec"><h5>Мова / Language</h5><div class="look-lang"><button class="btn ${LANG === "uk" ? "primary" : "ghost"} sm" data-lang="uk">Українська</button><button class="btn ${LANG === "en" ? "primary" : "ghost"} sm" data-lang="en">English</button></div><p class="muted small">Програма перезапуститься з вибраною мовою. · The app reloads in the chosen language.</p></div>
+    <div class="look-sec"><h5>Тема</h5><div class="look-themes">${Object.entries(THEMES).map(([k, l]) => `<button class="look-theme t-${k} ${UIP.theme === k ? "active" : ""}" data-th="${k}"><i></i><span>${l}</span></button>`).join("")}</div></div>
     <div class="look-sec"><h5>Колір акценту</h5><div class="look-acc">${Object.entries(ACCENTS).map(([k, a]) => `<button class="${UIP.accent === k ? "active" : ""}" data-ac="${k}" style="--c:${a[0]}" title="${a[2]}"><i></i>${a[2]}</button>`).join("")}</div></div>
     <div class="look-sec"><h5>Інтерфейс</h5>
       <label class="chk"><input type="checkbox" id="lk-compact" ${UIP.compact ? "checked" : ""}> Компактний режим — більше місця для доріжок на невеликому екрані</label>
       <label class="chk"><input type="checkbox" id="lk-hints" ${UIP.hints ? "checked" : ""}> Рядок підказок унизу екрана</label>
       <label class="chk"><input type="checkbox" id="lk-motion" ${UIP.motion ? "checked" : ""}> Анімації</label>
       <p class="muted small">Масштаб усього інтерфейсу: <span class="kbd">Ctrl +</span> / <span class="kbd">Ctrl −</span>, звичайний — <span class="kbd">Ctrl 0</span>.</p></div>
-    <div class="look-sec"><h5>Розкладка панелей</h5><p class="muted small">Межі між панелями можна перетягувати: таймлайн і мікшер, колонку доріжок, бічну панель. Подвійний клік по межі повертає стандартний розмір. Готові розкладки і збереження своїх — у меню «Вигляд».</p>
+    <div class="look-sec"><h5>Розкладка панелей</h5><p class="muted small">Межі між панелями можна перетягувати: таймлайн і мікшер, колонку доріжок, бічну панель. Подвійний клік по межі повертає стандартний розмір. Будь-яку вкладку нижньої панелі можна перетягнути вгору — вона відкриється в окремому плаваючому вікні; діалоги відкріплюються кнопкою ⧉. Готові розкладки і збереження своїх (разом з окремими вікнами) — у меню «Вигляд».</p>
       <div class="look-lay">${Object.keys(LAYOUTS).map((n) => `<button class="btn ghost sm" data-lay="${escapeHtml(n)}">${escapeHtml(n)}</button>`).join("")}</div></div>`;
+  $$("[data-lang]", box).forEach((b) => b.onclick = () => { if (b.dataset.lang !== LANG) setLang(b.dataset.lang); });
   $$("[data-th]", box).forEach((b) => b.onclick = () => {
     UIP.theme = b.dataset.th;
     saveUI();
@@ -369,7 +371,8 @@ applyLayout(UIP.layout, { silent: true });
 const PICK_ACCEPT = {
   audio: "audio/*,.wav,.mp3,.flac,.ogg,.m4a,.aif,.aiff,.opus",
   image: "image/*,.jpg,.jpeg,.png,.webp",
-  zip: ".zip"
+  zip: ".zip",
+  inkbeat: ".inkbeat,.zip"
 };
 function pickByInput(kind, multiple) {
   return new Promise((res) => {

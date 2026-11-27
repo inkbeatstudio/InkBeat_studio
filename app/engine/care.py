@@ -72,8 +72,35 @@ def update_from_zip(zpath: Path, progress=None) -> dict:
 
 
 def archive(pid: str, dest: Path, progress=None) -> Path:
+    import re
+
     d = P.workspace() / pid
-    files = [f for f in d.rglob("*") if f.is_file() and "export" not in f.relative_to(d).parts[:1]]
+    skip = {"export", "render", "video", "__pycache__"}
+    mixtxt = (d / "mix.json").read_text(encoding="utf-8") if (d / "mix.json").exists() else ""
+    used = set(re.findall(r"v[0-9a-f]{8}", mixtxt))
+    try:
+        vmeta = json.loads((d / "versions" / "versions.json").read_text(encoding="utf-8"))
+        grow = True
+        while grow:
+            grow = False
+            for k, v in (vmeta.items() if isinstance(vmeta, dict) else []):
+                if k in used and isinstance(v, dict):
+                    par = v.get("source") or v.get("parent")
+                    if par and par not in used:
+                        used.add(par)
+                        grow = True
+    except Exception:
+        pass
+
+    def keep(f):
+        rel = f.relative_to(d)
+        if rel.parts[0] in skip:
+            return False
+        if rel.parts[0] == "versions" and f.suffix == ".wav" and (f.stem.endswith("_preview") or f.stem.split("_")[0] not in used):
+            return False
+        return True
+
+    files = [f for f in d.rglob("*") if f.is_file() and keep(f)]
     with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED, compresslevel=3) as z:
         z.writestr("inkbeat_archive.json", json.dumps({"pid": pid, "version": P.VERSION, "time": time.strftime("%Y-%m-%d %H:%M")}))
         for i, f in enumerate(files):
