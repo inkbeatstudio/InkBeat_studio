@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+
 import numpy as np
 
 
@@ -294,34 +296,154 @@ def tempo_warp(y: np.ndarray, sr: int, segs: list, progress=None):
     return res, {"segments": len(cuts), "length_s": round(res.shape[1] / sr, 2)}
 
 
-def harmonize_voice(y: np.ndarray, sr: int, notes: list, keep_gaps: bool = False, progress=None):
+def tempo_clips(y: np.ndarray, sr: int, pieces: list, progress=None):
     y = np.atleast_2d(y)
     n = y.shape[1]
-    out = np.zeros_like(y) if not keep_gaps else y.copy()
-    fade = int(0.012 * sr)
+    gap = int(sr)
+    out, offs, pos = [], [], 0
+    total = max(1, len(pieces))
+    for k, (a, b, segs) in enumerate(pieces):
+        s0 = int(max(0, min(n, round(float(a) * sr))))
+        s1 = int(max(s0, min(n, round(float(b) * sr))))
+        piece = y[:, s0:s1]
+        if piece.shape[1] < 16:
+            z = piece.copy()
+        else:
+            sub = None if not progress else (lambda f, k=k: progress((k + f) / total))
+            z, _ = tempo_warp(piece, sr, segs or [[0, 1e9, 1.0]], sub)
+        offs.append([round(pos / sr, 6), round(z.shape[1] / sr, 6)])
+        out.append(z.astype(np.float32))
+        out.append(np.zeros((y.shape[0], gap), np.float32))
+        pos += z.shape[1] + gap
+        if progress:
+            progress((k + 1) / total)
+    res = np.concatenate(out, axis=1) if out else y
+    return res, {"pieces": offs, "length_s": round(res.shape[1] / sr, 2)}
+
+
+_F0_CACHE: dict = {}
+_F0_LOCK = threading.Lock()
+
+
+def _voice_segments(y: np.ndarray, sr: int, progress=None):
+    import librosa
+
+    mono = np.atleast_2d(y).mean(axis=0)
+    key = (mono.shape[0], sr, round(float(np.abs(mono[::4099]).sum()), 4))
+    with _F0_LOCK:
+        if key in _F0_CACHE:
+            return _F0_CACHE[key]
+        lo = 16000
+        z = librosa.resample(mono, orig_sr=sr, target_sr=lo) if sr != lo else mono
+        hop = 160
+        f0, vflag, vprob = librosa.pyin(z, fmin=70.0, fmax=1050.0, sr=lo, frame_length=1024, hop_length=hop,
+                                        fill_na=np.nan)
+        rms = librosa.feature.rms(y=z, frame_length=1024, hop_length=hop)[0]
+        rms = rms[: len(f0)]
+        gate = max(1e-4, float(np.percentile(rms[rms > 0], 60)) * 0.12) if np.any(rms > 0) else 1e-4
+        midi = np.where(vflag & (rms > gate), librosa.hz_to_midi(np.nan_to_num(f0, nan=1.0)), np.nan)
+        from scipy.ndimage import median_filter
+
+        filled = np.where(np.isnan(midi), -100.0, midi)
+        filled = median_filter(filled, size=5, mode="nearest")
+        dt = hop / lo
+        segs, cur = [], None
+        for i, m in enumerate(filled):
+            if m < 0:
+                if cur:
+                    segs.append(cur)
+                    cur = None
+                continue
+            r = int(round(m))
+            if cur and (abs(m - cur[2]) < 0.75):
+                cur[1] = (i + 1) * dt
+                cur[3].append(m)
+            else:
+                if cur:
+                    segs.append(cur)
+                cur = [i * dt, (i + 1) * dt, r, [m]]
+        if cur:
+            segs.append(cur)
+        out = []
+        for a, b, r, ms in segs:
+            if b - a < 0.06:
+                if out and a - out[-1][1] < 0.03:
+                    out[-1][1] = b
+                continue
+            out.append([a, b, int(round(float(np.median(ms))))])
+        if len(_F0_CACHE) > 8:
+            _F0_CACHE.clear()
+        _F0_CACHE[key] = out
+        return out
+
+
+def _diatonic_shift(p: int, tonic: int, scale: list, d: int) -> int:
+    pcs = sorted({(tonic + int(i)) % 12 for i in scale}) or list(range(12))
+    best = min(range(-6, 7), key=lambda o: (((p + o) % 12) not in pcs, abs(o)))
+    sp = p + best
+    q, steps = sp, abs(d)
+    while steps:
+        q += 1 if d > 0 else -1
+        if q % 12 in pcs:
+            steps -= 1
+    return q - p
+
+
+def harmonize_voice(y: np.ndarray, sr: int, notes: list, keep_gaps: bool = False, progress=None, auto: dict | None = None):
+    y = np.atleast_2d(y)
+    n = y.shape[1]
+    say = progress or (lambda f: None)
+    fade = int(0.015 * sr)
+    if auto:
+        fixed = auto.get("semis")
+        if fixed is not None and not auto.get("range"):
+            say(0.1)
+            res = _stretch_hq(y, sr, 1.0, float(fixed))[:, :n]
+            if res.shape[1] < n:
+                res = np.pad(res, ((0, 0), (0, n - res.shape[1])))
+            say(1.0)
+            return res.astype(np.float32), {"segments": 1, "mode": "fixed"}
+        segs0 = _voice_segments(y, sr)
+        say(0.35)
+        rng = auto.get("range")
+        tonic, scale, d = int(auto.get("tonic", 0)), auto.get("scale") or [0, 2, 4, 5, 7, 9, 11], int(auto.get("degree", 2))
+        notes = []
+        for a, b, p in segs0:
+            if rng and (b <= float(rng[0]) or a >= float(rng[1])):
+                continue
+            st = float(fixed) if fixed is not None else _diatonic_shift(p, tonic, scale, d)
+            notes.append([a, b, st])
     segs = sorted((float(a), float(b), float(s)) for a, b, s in notes if float(b) > float(a))
     merged = []
     for a, b, st in segs:
-        if merged and abs(merged[-1][2] - st) < 1e-3 and a - merged[-1][1] < 0.06:
+        if merged and abs(merged[-1][2] - st) < 1e-3 and a - merged[-1][1] < 0.08:
             merged[-1][1] = b
         else:
             merged.append([a, b, st])
-    for k, (a, b, st) in enumerate(merged):
+    out = np.zeros_like(y) if not keep_gaps else y.copy()
+    shifts = sorted({round(st, 3) for _, _, st in merged})
+    base = 0.35 if auto else 0.0
+    rendered = {}
+    for i, st in enumerate(shifts):
+        if abs(st) < 1e-3:
+            rendered[st] = y
+        else:
+            z = _stretch_hq(y, sr, 1.0, st)[:, :n]
+            if z.shape[1] < n:
+                z = np.pad(z, ((0, 0), (0, n - z.shape[1])))
+            rendered[st] = z
+        say(base + (1 - base) * 0.9 * (i + 1) / max(1, len(shifts)))
+    for a, b, st in merged:
         s0, s1 = max(0, int(a * sr) - fade), min(n, int(b * sr) + fade)
         if s1 - s0 < fade * 3:
             continue
-        piece = y[:, s0:s1]
-        z = _stretch_hq(piece, sr, 1.0, st) if abs(st) > 1e-3 else piece.copy()
-        z = z[:, : s1 - s0]
-        if z.shape[1] < s1 - s0:
-            z = np.pad(z, ((0, 0), (0, s1 - s0 - z.shape[1])))
+        z = rendered[round(st, 3)][:, s0:s1]
         env = np.ones(s1 - s0, dtype=np.float32)
         env[:fade] = np.linspace(0, 1, fade)
         env[-fade:] = np.linspace(1, 0, fade)
         out[:, s0:s1] = out[:, s0:s1] * (1 - env) + z * env
-        if progress:
-            progress((k + 1) / max(1, len(merged)))
-    return out.astype(np.float32), {"segments": len(merged)}
+    say(1.0)
+    return out.astype(np.float32), {"segments": len(merged), "shifts": len(shifts)}
 
 
 def estimate_key(y: np.ndarray, sr: int):

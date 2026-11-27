@@ -868,7 +868,7 @@ async function loadInstrumentBuffers(ctx) {
       }
     }
     if (inst.type === "drums" && inst.pads) for (const [g, pd] of Object.entries(inst.pads)) {
-      if (pd && pd.sample && String(pd.sample).startsWith("lib:") && !A.ibuf.has("drum:" + g + ":" + pd.sample)) need.push(["drum:" + g + ":" + pd.sample, `/api/project/${S.pid}/sample?f=${encodeURIComponent(pd.sample)}`]);
+      if (pd && pd.sample && /^(lib|sb):/.test(String(pd.sample)) && !A.ibuf.has("drum:" + g + ":" + pd.sample)) need.push(["drum:" + g + ":" + pd.sample, `/api/project/${S.pid}/sample?f=${encodeURIComponent(pd.sample)}`]);
     }
   }
   await Promise.all(need.map(async ([k, url, alias]) => {
@@ -2112,7 +2112,7 @@ $("#export-btn").addEventListener("click", () => {
     try {
       if (doRender) await renderAll(prog);
       prog("Записую пісню, доріжки, MIDI і семпли…", 0.97);
-      const r = await api.post(`/api/project/${S.pid}/export`, Object.assign({ use_render: doRender, mixdown: doMix, edited: doMidi ? editedMidi() : null, tempo: tmExport() }, exportExtras()));
+      const r = await api.post(`/api/project/${S.pid}/export`, Object.assign({ use_render: doRender, mixdown: doMix, edited: doMidi ? editedMidi() : null, tempo: tmExport(), lang: LANG }, exportExtras()));
       showExportDone(r);
     } catch (e) {
       $("#ex-title").textContent = "Помилка експорту";
@@ -2127,7 +2127,7 @@ function showExportDone(r) {
   const daws = ["FL Studio", "Ableton Live", "Logic Pro", "GarageBand", "Cubase", "Studio One", "Reaper", "Bitwig", "LMMS"];
   $("#ex-title").textContent = "Експорт готовий";
   $("#ex-body").innerHTML = `<div class="ex-path">${escapeHtml(r.path)}</div>
-    <div class="ex-actions"><button class="btn primary" id="ex-open">Відкрити папку</button>${hasMix ? `<a class="btn ghost" href="/api/project/${S.pid}/mixdown/mp3" download data-hint="Готова пісня одним файлом MP3 320 кбіт/с — щоб надіслати чи викласти">Пісня MP3 ⤓</a><a class="btn ghost" href="/api/project/${S.pid}/mixdown/wav" download data-hint="Готова пісня без втрати якості — для стрімінгових сервісів і дистриб'юторів">Пісня WAV ⤓</a>` : ""}<a class="btn ghost" href="/api/project/${S.pid}/midi" download data-hint="Усі партії нотами в одному MIDI-файлі">MIDI ⤓</a><a class="btn ghost" href="/api/project/${S.pid}/guide" target="_blank" data-hint="Поради, якими інструментами й ефектами відтворити звук кожної доріжки">Звуковий гід</a></div>
+    <div class="ex-actions"><button class="btn primary" id="ex-open">Відкрити папку</button>${hasMix ? `<a class="btn ghost" href="/api/project/${S.pid}/mixdown/mp3" download data-hint="Готова пісня одним файлом MP3 320 кбіт/с — щоб надіслати чи викласти">Пісня MP3 ⤓</a><a class="btn ghost" href="/api/project/${S.pid}/mixdown/wav" download data-hint="Готова пісня без втрати якості — для стрімінгових сервісів і дистриб'юторів">Пісня WAV ⤓</a>` : ""}<a class="btn ghost" href="/api/project/${S.pid}/midi" download data-hint="Усі партії нотами в одному MIDI-файлі">MIDI ⤓</a><a class="btn ghost" href="/api/project/${S.pid}/guide?lang=${LANG}" target="_blank" data-hint="Поради, якими інструментами й ефектами відтворити звук кожної доріжки">Звуковий гід</a></div>
     <ol class="steps">
       ${hasMix ? `<li><b>Готова пісня</b><p><span class="kbd">… - mix.mp3</span> і <span class="kbd">… - mix.wav</span> — увесь трек з ефектами й Master. Можна одразу слухати, надсилати й публікувати.</p></li>` : ""}
       <li><b>Окремі доріжки</b><p>${rendered ? `<span class="kbd">Rendered (InkBeat edits)</span> — кожна доріжка з вашими ефектами й обробкою. ` : ""}<span class="kbd">Stems (aligned)</span> — оригінальні розділені доріжки. Усі WAV починаються з однієї точки, тож у будь-якій програмі просто поставте їх на початок — вони збіжуться між собою й з MIDI.</p></li>

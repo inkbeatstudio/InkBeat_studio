@@ -165,12 +165,21 @@ async function openPhone() {
     <div class="arr-row"><button class="btn primary" id="ph-on">Увімкнути доступ з телефона</button><button class="btn ghost" id="ph-off">Вимкнути</button></div>
     <div id="ph-url" class="ph-url"></div>
     <h5>Вхідні</h5><div id="ph-list" class="sb-list"></div>
-    <p class="muted small">Безпека: доступ працює лише поки увімкнений, адреса містить одноразовий код, приймаються тільки аудіо й текст. Якщо телефон не відкриває сторінку — дозвольте InkBeat у брандмауері Windows для приватних мереж.</p>`);
+    <p class="muted small">Безпека: доступ працює лише поки увімкнений, адреса містить одноразовий код, приймаються тільки аудіо й текст. Під час першого увімкнення Windows один раз попросить дозволу — погодьтеся, щоб телефон міг під'єднатися.</p>`);
   m.querySelector(".modal-card").style.width = "min(820px,96vw)";
-  const showUrl = (r) => { $("#ph-url", m).innerHTML = r && r.url ? `<span class="muted small">Відкрийте на телефоні:</span><b>${escapeHtml(r.url)}</b><span class="muted small">Код доступу: ${escapeHtml(r.token)}</span>` : `<span class="muted small">Доступ вимкнено.</span>`; };
-  $("#ph-on", m).onclick = async () => { try { const r = await api.post("/api/phone/start", {}); PH.url = r.url; showUrl(r); } catch (e) { toast("Не вдалося: " + e.message, true); } };
-  $("#ph-off", m).onclick = async () => { await api.post("/api/phone/stop", {}); PH.url = ""; showUrl(null); };
-  showUrl(PH.url ? { url: PH.url, token: PH.url.split("k=")[1] } : null);
+  const showUrl = (r) => {
+    const box = $("#ph-url", m);
+    if (!r || !r.url) { box.innerHTML = `<span class="muted small">Доступ вимкнено.</span>`; return; }
+    const fw = r.firewall === "declined" ? `<p class="warn small">Windows не дозволив доступ з мережі. Якщо телефон не відкриває сторінку, натисніть «Дозволити ще раз» і погодьтеся у вікні Windows. <button class="btn ghost sm" id="ph-fw">Дозволити ще раз</button></p>` : r.firewall === "added" ? `<p class="ok small">Доступ у брандмауері Windows дозволено.</p>` : "";
+    const lan = r.lan === false ? `<p class="warn small">Комп'ютер не підключений до мережі. Підключіться до Wi-Fi і натисніть «Увімкнути» ще раз.</p>` : "";
+    box.innerHTML = `<div class="ph-qr"><canvas id="ph-qr" data-hint="Наведіть камеру телефона на цей код — сторінка відкриється сама"></canvas><div><span class="muted small">Наведіть камеру телефона на код або введіть адресу в браузері телефона:</span><b>${escapeHtml(r.url)}</b><span class="muted small">Код доступу: ${escapeHtml(r.token)}</span>${lan}${fw}</div></div>`;
+    try { QR.draw($("#ph-qr", m), r.url, 200); } catch (e) { $("#ph-qr", m).remove(); }
+    const again = $("#ph-fw", m);
+    if (again) again.onclick = async () => { again.disabled = true; try { const r2 = await api.post("/api/phone/start", { retry_fw: true }); PH.last = r2; showUrl(r2); } catch (e) { toast("Не вдалося: " + e.message, true); } };
+  };
+  $("#ph-on", m).onclick = async () => { $("#ph-on", m).disabled = true; try { const r = await api.post("/api/phone/start", {}); PH.url = r.url; PH.last = r; showUrl(r); } catch (e) { toast("Не вдалося: " + e.message, true); } $("#ph-on", m).disabled = false; };
+  $("#ph-off", m).onclick = async () => { await api.post("/api/phone/stop", {}); PH.url = ""; PH.last = null; showUrl(null); };
+  showUrl(PH.url ? (PH.last || { url: PH.url, token: PH.url.split("k=")[1] }) : null);
   await phRefresh(m);
   clearInterval(PH.poll);
   PH.poll = setInterval(() => { if (m.hidden) { clearInterval(PH.poll); return; } phRefresh(m); }, 3000);

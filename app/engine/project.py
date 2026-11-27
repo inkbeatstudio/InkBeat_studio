@@ -15,7 +15,7 @@ from . import cleanup, drums, harmony, midi_export, rhythm, samples, separation,
 from .jsonio import read_json, write_json
 from .transcribe import Note, Transcriber
 
-VERSION = "3.1.0"
+VERSION = "3.4.0"
 ANALYSIS_SR = 22050
 
 GRIDS = {"off": 0, "1/4": 1.0, "1/8": 0.5, "1/16": 0.25, "1/32": 0.125, "1/8T": 1 / 3, "1/16T": 1 / 6}
@@ -921,9 +921,13 @@ def export(pid: str, options: dict | None = None) -> dict:
         _loops(p, b, out / "Samples" / "Loops")
     except Exception:
         pass
+    from . import i18n as I18
     from .guide_html import render as render_guide
 
-    (out / "Звуковий гід.html").write_text(render_guide(p, b, kit, enabled, files), encoding="utf-8")
+    lang = options.get("lang")
+    gh = render_guide(p, b, kit, enabled, files)
+    keep = I18.keep_names(p, b["tracks"]) + [slugify(p["title"])]
+    (out / I18.name("Звуковий гід.html", lang)).write_text(I18.tr_html(gh, keep) if lang == "en" else gh, encoding="utf-8")
 
     fl_src = Path(__file__).resolve().parent.parent.parent / "fl_scripts"
     extra = out / "Extras" / "FL Studio"
@@ -944,7 +948,8 @@ def export(pid: str, options: dict | None = None) -> dict:
             _daw_projects(p, b, tm, out, options, daw)
         except Exception as e:
             (out / "daw_export_error.txt").write_text(str(e), encoding="utf-8")
-    (out / "ЯК ВІДКРИТИ В ІНШИХ ПРОГРАМАХ.txt").write_text(_guide(p, b, tm, enabled), encoding="utf-8")
+    gt = _guide(p, b, tm, enabled)
+    (out / I18.name("ЯК ВІДКРИТИ В ІНШИХ ПРОГРАМАХ.txt", lang)).write_text(I18.tr_text(gt, keep) if lang == "en" else gt, encoding="utf-8")
     return {"path": str(out), "files": sorted(str(x.relative_to(out)) for x in out.rglob("*") if x.is_file())}
 
 

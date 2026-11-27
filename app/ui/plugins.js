@@ -437,6 +437,70 @@ const Plugins = (() => {
       "Брас": base({ osc: [{ type: "sawtooth", oct: 0, gain: 0.5 }, { type: "sawtooth", oct: 0, detune: 6, gain: 0.4 }], filter: { type: "lowpass", cutoff: 900, q: 1, env: 1.8, keytrack: 0.4 }, fenv: A(0.06, 0.3, 0.6, 0.2), amp: A(0.04, 0.2, 0.85, 0.15), gain: 0.25 })
     }
   };
+  const O = (type, oct, gain, detune) => ({ type, oct: oct || 0, gain, detune: detune || 0 });
+  const F = (type, cutoff, q, env, keytrack) => ({ type, cutoff, q, env, keytrack });
+  Object.assign(SYNTH_PRESETS["Клавішні"], {
+    "Wurli": base({ osc: [O("triangle", 0, 0.7), O("sine", 1, 0.2)], fm: { ratio: 7, index: 0.5, decay: 0.2, sustain: 0.02 }, filter: F("lowpass", 3800, 0.7, 0.4, 0.3), fenv: A(1e-3, 0.4, 0.2, 0.3), amp: A(2e-3, 1.6, 0.2, 0.3), drive: 0.15, gain: 0.34 }),
+    "Лоу-фай піаніно": base({ osc: [O("sine", 0, 0.7), O("triangle", 1, 0.2)], fm: { ratio: 2, index: 0.9, decay: 0.4, sustain: 0.05 }, noise: 0.01, filter: F("lowpass", 2200, 0.6, 0, 0.3), amp: A(3e-3, 1.4, 0.05, 0.4), gain: 0.36 }),
+    "Іграшкове піаніно": base({ osc: [O("sine", 0, 0.6), O("sine", 2, 0.25)], fm: { ratio: 5.2, index: 1.5, decay: 0.15, sustain: 0 }, filter: F("lowpass", 9000, 0.5, 0, 0), amp: A(1e-3, 0.7, 0, 0.2), gain: 0.32 }),
+    "Хаус-орган": base({ osc: [O("sine", 0, 0.5), O("square", 1, 0.15), O("sine", 2, 0.2)], filter: F("lowpass", 2600, 1.2, 1, 0.2), fenv: A(2e-3, 0.18, 0.4, 0.1), amp: A(2e-3, 0.25, 0.6, 0.1), gain: 0.28 }),
+    "Акорд-стаб": base({ osc: [O("sawtooth", 0, 0.45, -7), O("sawtooth", 0, 0.45, 7)], unison: 2, spread: 10, filter: F("lowpass", 1800, 1.4, 1.8, 0.3), fenv: A(1e-3, 0.22, 0.1, 0.15), amp: A(1e-3, 0.35, 0.1, 0.2), gain: 0.26 }),
+    "FM-рояль": base({ osc: [O("sine", 0, 0.8), O("sine", 1, 0.1)], fm: { ratio: 1, index: 2.4, decay: 0.9, sustain: 0.08 }, filter: F("lowpass", 7000, 0.5, 0, 0.5), amp: A(2e-3, 2.4, 0, 0.5), gain: 0.32 })
+  });
+  Object.assign(SYNTH_PRESETS["Бас"], {
+    "Ейсід (303)": base({ osc: [O("sawtooth", 0, 0.8)], filter: F("lowpass", 380, 9, 4, 0.2), fenv: A(1e-3, 0.18, 0.05, 0.1), amp: A(2e-3, 0.25, 0.7, 0.06), drive: 0.3, gain: 0.32, mono: true }),
+    "Дисторшн 808": base({ osc: [O("sine", 0, 1)], filter: F("lowpass", 2400, 0.7, 0, 0), pitchEnv: { semi: 14, decay: 0.05 }, amp: A(2e-3, 1.4, 0.55, 0.3), drive: 0.8, gain: 0.42, mono: true }),
+    "808 з глайдом": base({ osc: [O("sine", 0, 1), O("triangle", 1, 0.08)], filter: F("lowpass", 3000, 0.5, 0, 0), pitchEnv: { semi: 24, decay: 0.09 }, amp: A(2e-3, 1.6, 0.6, 0.35), drive: 0.45, gain: 0.48, mono: true }),
+    "Плак-бас": base({ osc: [O("sawtooth", 0, 0.6), O("square", -1, 0.35)], filter: F("lowpass", 300, 2, 3, 0.2), fenv: A(1e-3, 0.12, 0.05, 0.08), amp: A(1e-3, 0.35, 0.3, 0.08), gain: 0.4, mono: true }),
+    "FM-бас": base({ osc: [O("sine", 0, 0.9)], fm: { ratio: 1, index: 3, decay: 0.15, sustain: 0.2 }, filter: F("lowpass", 2000, 0.7, 0, 0), amp: A(2e-3, 0.4, 0.75, 0.08), gain: 0.42, mono: true }),
+    "Аналоговий бас": base({ osc: [O("sawtooth", 0, 0.55), O("sawtooth", 0, 0.45, 9)], sub: 0.4, filter: F("lowpass", 650, 2.2, 1.6, 0.25), fenv: A(2e-3, 0.3, 0.25, 0.1), amp: A(2e-3, 0.3, 0.85, 0.08), drive: 0.15, gain: 0.36, mono: true }),
+    "Хаус-бас (орган)": base({ osc: [O("sine", 0, 0.7), O("sine", 1, 0.3)], filter: F("lowpass", 1200, 1, 0.5, 0), amp: A(2e-3, 0.25, 0.5, 0.06), gain: 0.42, mono: true }),
+    "Вобл-бас": base({ osc: [O("sawtooth", 0, 0.5, -10), O("square", 0, 0.4, 10)], unison: 2, spread: 16, filter: F("lowpass", 450, 6, 2.5, 0.2), fenv: A(0.12, 0.25, 0.4, 0.15), amp: A(5e-3, 0.3, 0.9, 0.1), drive: 0.4, gain: 0.3, mono: true }),
+    "Контрабас (синт)": base({ osc: [O("triangle", 0, 0.8), O("sine", 0, 0.3)], noise: 0.01, filter: F("lowpass", 700, 0.8, 0.8, 0.3), fenv: A(2e-3, 0.2, 0.2, 0.2), amp: A(4e-3, 1.2, 0.2, 0.15), gain: 0.46, mono: true })
+  });
+  Object.assign(SYNTH_PRESETS["Пади і струнні"], {
+    "Суперсо-пад": base({ osc: [O("sawtooth", 0, 0.35, -12), O("sawtooth", 0, 0.35, 12), O("sawtooth", 1, 0.15)], unison: 4, spread: 24, filter: F("lowpass", 3200, 0.6, 0.3, 0.2), fenv: A(0.4, 1, 0.7, 1), amp: A(0.35, 1, 0.9, 1.4), gain: 0.15 }),
+    "Скляний пад": base({ osc: [O("sine", 0, 0.5), O("triangle", 1, 0.25)], fm: { ratio: 3, index: 0.8, decay: 1.5, sustain: 0.3 }, filter: F("lowpass", 6000, 0.5, 0, 0), amp: A(0.4, 1, 0.8, 1.5), gain: 0.24 }),
+    "Лоу-фай пад": base({ osc: [O("triangle", 0, 0.5, -6), O("triangle", 0, 0.5, 6)], noise: 0.02, filter: F("lowpass", 1100, 0.6, 0, 0.1), amp: A(0.6, 1, 0.85, 1.6), drive: 0.1, gain: 0.26 }),
+    "Свіп-пад": base({ osc: [O("sawtooth", 0, 0.4, -9), O("sawtooth", 0, 0.4, 9)], unison: 3, spread: 18, filter: F("lowpass", 400, 4, 3, 0.1), fenv: A(2.5, 2, 0.6, 2), amp: A(0.8, 1, 0.9, 2), gain: 0.18 }),
+    "Аналогові струнні": base({ osc: [O("sawtooth", 0, 0.4, -4), O("sawtooth", 0, 0.4, 4), O("sawtooth", 1, 0.12)], unison: 3, spread: 14, filter: F("lowpass", 2600, 0.5, 0.3, 0.4), fenv: A(0.3, 0.6, 0.6, 0.6), amp: A(0.3, 0.5, 0.9, 0.7), gain: 0.17 }),
+    "Ембієнт": base({ osc: [O("sine", 0, 0.5), O("sine", 1, 0.3, 4), O("triangle", -1, 0.2)], noise: 0.015, filter: F("lowpass", 2000, 0.8, 0.4, 0), fenv: A(2, 3, 0.5, 3), amp: A(1.5, 2, 0.9, 3), gain: 0.24 }),
+    "Смичкові (синт)": base({ osc: [O("sawtooth", 0, 0.45, -3), O("sawtooth", 0, 0.45, 3)], unison: 2, spread: 8, filter: F("lowpass", 1900, 0.9, 0.6, 0.5), fenv: A(0.15, 0.4, 0.7, 0.4), amp: A(0.18, 0.4, 0.9, 0.5), gain: 0.2 })
+  });
+  Object.assign(SYNTH_PRESETS["Ліди"], {
+    "Суперсо-лід": base({ osc: [O("sawtooth", 0, 0.4, -15), O("sawtooth", 0, 0.4, 15)], unison: 4, spread: 28, filter: F("lowpass", 6500, 0.8, 0.3, 0.3), amp: A(5e-3, 0.3, 0.85, 0.25), gain: 0.18 }),
+    "Чіптюн (8-біт)": base({ osc: [O("square", 0, 0.6)], filter: F("lowpass", 12000, 0.5, 0, 0), amp: A(1e-3, 0.1, 0.8, 0.05), gain: 0.22, mono: true }),
+    "Гувер": base({ osc: [O("sawtooth", 0, 0.45, -20), O("sawtooth", -1, 0.4, 20)], unison: 3, spread: 30, filter: F("lowpass", 1800, 1.5, 1, 0.2), pitchEnv: { semi: -5, decay: 0.12 }, amp: A(0.02, 0.3, 0.9, 0.2), drive: 0.3, gain: 0.2, mono: true }),
+    "Транс-лід": base({ osc: [O("sawtooth", 0, 0.45, -8), O("sawtooth", 0, 0.45, 8), O("square", 1, 0.1)], unison: 2, spread: 14, filter: F("lowpass", 3800, 1.2, 1.2, 0.3), fenv: A(3e-3, 0.25, 0.4, 0.2), amp: A(3e-3, 0.3, 0.8, 0.3), gain: 0.2 }),
+    "Свисток": base({ osc: [O("sine", 0, 0.9)], noise: 0.02, filter: F("bandpass", 2500, 1, 0, 0.8), amp: A(0.05, 0.2, 0.9, 0.15), gain: 0.4, mono: true }),
+    "Синк-лід": base({ osc: [O("sawtooth", 0, 0.5), O("square", 1, 0.3, 7)], filter: F("lowpass", 2500, 3, 2, 0.4), fenv: A(2e-3, 0.4, 0.3, 0.2), amp: A(3e-3, 0.3, 0.85, 0.15), drive: 0.25, gain: 0.22, mono: true }),
+    "Мелодика": base({ osc: [O("square", 0, 0.4), O("sawtooth", 0, 0.3, 5)], filter: F("lowpass", 2600, 0.8, 0.2, 0.4), amp: A(0.03, 0.2, 0.9, 0.12), gain: 0.28 }),
+    "Ріджент (синт-гітара)": base({ osc: [O("sawtooth", 0, 0.5), O("sawtooth", 0, 0.4, 12)], filter: F("lowpass", 2200, 1.2, 0.8, 0.3), amp: A(3e-3, 0.4, 0.75, 0.25), drive: 0.6, gain: 0.2, mono: true })
+  });
+  Object.assign(SYNTH_PRESETS["Плаки і дзвони"], {
+    "Фьюче-плак": base({ osc: [O("sawtooth", 0, 0.45, -10), O("sawtooth", 0, 0.45, 10)], unison: 3, spread: 18, filter: F("lowpass", 700, 1.5, 4, 0.3), fenv: A(1e-3, 0.25, 0, 0.2), amp: A(1e-3, 0.6, 0, 0.3), gain: 0.25 }),
+    "Калімба": base({ osc: [O("sine", 0, 0.9)], fm: { ratio: 6, index: 1.2, decay: 0.05, sustain: 0 }, filter: F("lowpass", 6000, 0.5, 0, 0), amp: A(1e-3, 0.9, 0, 0.3), gain: 0.42 }),
+    "Арфа (синт)": base({ osc: [O("triangle", 0, 0.7), O("sine", 1, 0.2)], filter: F("lowpass", 3000, 0.8, 1, 0.4), fenv: A(1e-3, 0.4, 0.1, 0.4), amp: A(1e-3, 1.8, 0, 0.6), gain: 0.36 }),
+    "Музична скринька": base({ osc: [O("sine", 0, 0.7), O("sine", 2, 0.2)], fm: { ratio: 8, index: 1, decay: 0.3, sustain: 0 }, filter: F("lowpass", 10000, 0.5, 0, 0), amp: A(1e-3, 1.4, 0, 0.6), gain: 0.32 }),
+    "Стілдрам": base({ osc: [O("sine", 0, 0.8), O("sine", 1, 0.25)], fm: { ratio: 2.76, index: 1.4, decay: 0.3, sustain: 0.05 }, filter: F("lowpass", 7000, 0.5, 0, 0), amp: A(1e-3, 1.1, 0, 0.4), gain: 0.32 }),
+    "Вібрафон": base({ osc: [O("sine", 0, 0.85), O("sine", 2, 0.1)], fm: { ratio: 4, index: 0.6, decay: 0.4, sustain: 0.05 }, filter: F("lowpass", 8000, 0.5, 0, 0), amp: A(1e-3, 3, 0.05, 1.2), gain: 0.32 }),
+    "Дзвін-пад": base({ osc: [O("sine", 0, 0.6), O("triangle", 1, 0.2)], fm: { ratio: 3.5, index: 2, decay: 2, sustain: 0.2 }, filter: F("lowpass", 9000, 0.5, 0, 0), amp: A(0.01, 3, 0.4, 2), gain: 0.22 }),
+    "Ксилофон (синт)": base({ osc: [O("sine", 0, 0.9), O("sine", 2, 0.15)], fm: { ratio: 3, index: 1.6, decay: 0.04, sustain: 0 }, filter: F("lowpass", 9000, 0.5, 0, 0), amp: A(1e-3, 0.35, 0, 0.15), gain: 0.42 })
+  });
+  Object.assign(SYNTH_PRESETS["Духові"], {
+    "Брас-стаб": base({ osc: [O("sawtooth", 0, 0.45, -5), O("sawtooth", 0, 0.45, 5)], unison: 2, spread: 10, filter: F("lowpass", 1200, 1, 2.2, 0.4), fenv: A(0.02, 0.2, 0.3, 0.15), amp: A(0.01, 0.3, 0.4, 0.15), gain: 0.25 }),
+    "М'яка валторна": base({ osc: [O("sawtooth", 0, 0.4), O("triangle", 0, 0.4)], filter: F("lowpass", 800, 0.8, 0.8, 0.4), fenv: A(0.12, 0.4, 0.6, 0.3), amp: A(0.1, 0.3, 0.9, 0.3), gain: 0.3 }),
+    "Сакс (синт)": base({ osc: [O("sawtooth", 0, 0.5), O("square", 0, 0.25, 4)], noise: 0.02, filter: F("bandpass", 1300, 1.5, 0.6, 0.6), fenv: A(0.03, 0.3, 0.6, 0.2), amp: A(0.04, 0.2, 0.9, 0.15), gain: 0.42, mono: true }),
+    "Флейта пан": base({ osc: [O("sine", 0, 0.8)], noise: 0.06, filter: F("lowpass", 3000, 0.6, 0, 0.4), amp: A(0.08, 0.2, 0.85, 0.2), gain: 0.34, mono: true })
+  });
+  SYNTH_PRESETS["Ефекти й переходи"] = {
+    "Райзер (шум)": base({ osc: [O("sawtooth", 0, 0.2)], noise: 0.4, filter: F("bandpass", 600, 2, 4, 0), fenv: A(3, 1, 1, 0.5), amp: A(2.5, 0.5, 1, 0.6), gain: 0.2 }),
+    "Лазер": base({ osc: [O("square", 0, 0.5)], pitchEnv: { semi: 36, decay: 0.12 }, filter: F("lowpass", 6000, 2, 0, 0), amp: A(1e-3, 0.25, 0, 0.1), gain: 0.25 }),
+    "Падіння (даунліфтер)": base({ osc: [O("sawtooth", 0, 0.4)], noise: 0.2, pitchEnv: { semi: -24, decay: 1.2 }, filter: F("lowpass", 5000, 1, -1, 0), fenv: A(0.01, 2, 0.1, 0.5), amp: A(0.01, 2, 0.2, 0.8), gain: 0.2 }),
+    "Вітер": base({ osc: [O("sine", 0, 0)], noise: 0.5, filter: F("bandpass", 900, 4, 1, 0.5), fenv: A(1.5, 2, 0.6, 2), amp: A(1.2, 1, 0.9, 2), gain: 0.25 }),
+    "Космос": base({ osc: [O("sine", 0, 0.5), O("sine", 1, 0.4, 7)], fm: { ratio: 1.41, index: 3, decay: 3, sustain: 0.4 }, filter: F("lowpass", 4000, 2, 0.5, 0), amp: A(1, 2, 0.8, 3), gain: 0.22 }),
+    "Удар (імпакт)": base({ osc: [O("sine", -1, 1)], noise: 0.25, pitchEnv: { semi: 18, decay: 0.15 }, filter: F("lowpass", 2500, 0.7, 0, 0), amp: A(1e-3, 1.5, 0, 0.8), drive: 0.5, gain: 0.45 })
+  };
   const presetByName = (name) => {
     for (const g in SYNTH_PRESETS) if (SYNTH_PRESETS[g][name]) return clone(SYNTH_PRESETS[g][name]);
     return null;

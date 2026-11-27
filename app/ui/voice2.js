@@ -1,8 +1,8 @@
 "use strict";
 const VH_VOICES = [["3u", "Терція вище", 2], ["3d", "Терція нижче", -2], ["5u", "Квінта вище", 4], ["6d", "Секста нижче", -5], ["8d", "Октава нижче", "o-12"], ["8u", "Октава вище", "o12"]];
-async function vhProcess(id, notes, onp) {
+async function vhProcess(id, params, onp) {
   const t = findT(id), T = mt(id);
-  const r = await api.post(`/api/project/${S.pid}/process`, { base: baseId(t), source: T.source, op: "harmony", params: { notes } });
+  const r = await api.post(`/api/project/${S.pid}/process`, { base: baseId(t), source: T.source, op: "harmony", params });
   let j;
   for (;;) { await new Promise((res) => setTimeout(res, 500)); j = await api.get(`/api/process/${r.job}`); if (onp) onp(j.progress); if (j.status !== "running") break; }
   if (j.status === "error") throw new Error(j.error);
@@ -10,43 +10,39 @@ async function vhProcess(id, notes, onp) {
 }
 function openVocalHarmony(t) {
   if (!t || !t.has_audio) return toast("Гармонію можна зробити для доріжки із записом голосу.", true);
-  const ns = trackNotes(t);
-  if (!ns.length) return toast("У доріжці немає розпізнаних нот мелодії. Спершу увімкніть розпізнавання нот (вкладка «Ноти»).", true);
   const k = hmKey();
-  const m = careModalBox("vh-modal", "Вокальна гармонія", `<p class="muted">Програма робить бек-голоси з вашого запису «${escapeHtml(t.name)}»: кожна нота мелодії зсувається на інтервал у гамі ${escapeHtml(NOTE_NAMES[k.tonic] + " " + HM_SCALES[k.scale][0].toLowerCase())}, тож гармонія звучить правильно. Кожен голос — окрема доріжка-копія, її можна стишити, рознести в панорамі чи вимкнути.</p>
+  const m = careModalBox("vh-modal", "Вокальна гармонія", `<p class="muted">Програма робить бек-голоси з вашого запису «${escapeHtml(t.name)}»: програма сама чує кожну ноту, яку ви співаєте, і зсуває її на інтервал у гамі ${escapeHtml(NOTE_NAMES[k.tonic] + " " + HM_SCALES[k.scale][0].toLowerCase())}, тож гармонія звучить правильно. Кожен голос — окрема доріжка-копія, її можна стишити, рознести в панорамі чи вимкнути.</p>
     <div class="vh-voices">${VH_VOICES.map(([key, l], i) => `<label class="chk"><input type="checkbox" data-v="${key}" ${i === 0 || i === 2 ? "checked" : ""}> ${escapeHtml(l)}</label>`).join("")}</div>
     <div class="mel-grid"><label data-hint="Гучність бек-голосів відносно основного">Гучність, дБ <input type="range" id="vh-vol" min="-18" max="0" step="1" value="-7"></label>
       <label data-hint="Рознести голоси ліворуч і праворуч">Ширина <input type="range" id="vh-pan" min="0" max="1" step="0.05" value="0.5"></label>
       <label class="chk" data-hint="Лише виділений цикл замість усієї пісні"><input type="checkbox" id="vh-loop" ${S.loop && S.loop.b > S.loop.a ? "" : "disabled"}> лише виділений цикл</label></div>
-    <div class="pbar"><div id="vh-bar" style="width:0%"></div></div><p class="muted small" id="vh-st">Обробка займає приблизно стільки часу, скільки триває пісня, на кожен голос.</p>
+    <div class="pbar"><div id="vh-bar" style="width:0%"></div></div><p class="muted small" id="vh-st">Усі голоси обробляються одночасно. Спершу програма слухає мелодію, потім будує голоси — зазвичай це менше хвилини на пісню.</p>
     <div class="modal-actions"><button class="btn ghost" data-k="x">Скасувати</button><button class="btn primary" id="vh-go">Створити гармонію</button></div>`);
   $("#vh-go", m).onclick = async () => {
     const pick = VH_VOICES.filter(([key]) => $(`[data-v="${key}"]`, m).checked);
     if (!pick.length) return toast("Виберіть хоча б один голос.", true);
     const P = period(), pad = S.B.timing.pad, loop = $("#vh-loop", m).checked && S.loop;
-    const sc = k.sc, ton = k.tonic;
-    const step = (p, d) => { const sp = hmSnapP(p); return hmP(hmDeg(sp, sc, ton) + d, sc, ton) + (p - sp); };
     const vol = +$("#vh-vol", m).value, width = +$("#vh-pan", m).value;
+    const range = loop ? [+(S.loop.a * P - pad).toFixed(4), +(S.loop.b * P - pad).toFixed(4)] : null;
     $("#vh-go", m).disabled = true;
     pushUndo("вокальна гармонія");
     try {
-      let i = 0;
-      for (const [key, label, d] of pick) {
-        i++;
-        $("#vh-st", m).textContent = `Голос «${label}» (${i} з ${pick.length})…`;
-        const notes = ns.filter((n) => !loop || (n[0] >= S.loop.a - 0.01 && n[0] < S.loop.b)).map((n) => {
-          const semis = typeof d === "string" ? +d.slice(1) : step(n[2], d) - n[2];
-          return [+(n[0] * P - pad).toFixed(4), +((n[0] + n[1]) * P - pad).toFixed(4), semis];
-        });
+      const jobs = pick.map(([key, label, d], i) => {
         duplicateTrack(t);
         const id = S.sel, cl = S.mix.clones.find((c) => c.id === id);
         if (cl) cl.name = `${t.name} · ${label}`;
         const tm = mt(id);
         tm.vol = (mt(t.id).vol || 0) + vol;
-        tm.pan = pick.length === 1 ? 0 : ((i - 1) / (pick.length - 1) * 2 - 1) * width;
+        tm.pan = pick.length === 1 ? 0 : (i / (pick.length - 1) * 2 - 1) * width;
         tm.mode = "audio";
-        await vhProcess(id, notes, (p) => { $("#vh-bar", m).style.width = Math.round(((i - 1) + p) / pick.length * 100) + "%"; });
-      }
+        const auto = { tonic: k.tonic, scale: k.sc, range };
+        if (typeof d === "string") auto.semis = +d.slice(1); else auto.degree = d;
+        return { id, auto };
+      });
+      await flushMix();
+      const prog = jobs.map(() => 0);
+      const paint = () => { const f = prog.reduce((a, b) => a + b, 0) / prog.length; $("#vh-bar", m).style.width = Math.round(f * 100) + "%"; $("#vh-st", m).textContent = f < 0.35 ? tr("Слухаю мелодію…") : `${tr("Будую голоси…")} ${Math.round(f * 100)}%`; };
+      await Promise.all(jobs.map((jb, i) => vhProcess(jb.id, { auto: jb.auto }, (p) => { prog[i] = p; paint(); })));
       S.versions = await api.get(`/api/project/${S.pid}/versions`);
       _tracksKey = "";
       await loadAudio();

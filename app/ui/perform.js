@@ -226,9 +226,13 @@ function openSecondWindow() {
   LIVE.on = true;
   if (!LIVE.bc && "BroadcastChannel" in window) LIVE.bc = new BroadcastChannel("inkbeat-live");
   const api2 = window.pywebview && window.pywebview.api;
-  if (api2 && api2.open_window) api2.open_window("ui/second.html", tr("InkBeat — друге вікно")).then((ok) => { if (!ok) window.open("/ui/second.html", "inkbeat2"); });
-  else window.open("/ui/second.html", "inkbeat2", "width=1100,height=700");
-  toast("Друге вікно відкрито: перетягніть його на другий монітор і розгорніть на весь екран (F11).");
+  const hint = () => toast("Друге вікно відкрито: перетягніть його на другий монітор і розгорніть на весь екран (F11).");
+  if (api2 && api2.open_window) api2.open_window("ui/second.html", tr("InkBeat — друге вікно")).then((r) => {
+    if (r === "second") toast("Друге вікно відкрито на другому моніторі на весь екран. Закрити: Esc або Alt+F4 у тому вікні.");
+    else if (r) hint();
+    else { window.open("/ui/second.html", "inkbeat2"); hint(); }
+  });
+  else { window.open("/ui/second.html", "inkbeat2", "width=1100,height=700"); hint(); }
 }
 setInterval(() => {
   if (!LIVE.on || !S.B) return;

@@ -197,7 +197,7 @@ function makeWin(o) {
     if (a === "min") { w.collapsed = !w.collapsed; w.apply(); w.changed(); }
     else if (a === "max") { w.max = !w.max; w.apply(); w.changed(); if (w.onResize) w.onResize(); }
     else if (a === "close") w.close();
-    else if (a === "dock") (w.onDockDrop || w.close)();
+    else if (a === "dock") (w.onDockBtn || w.onDockDrop || w.close)();
     else if (a === "menu") winMenu(e, w);
   });
   w.changed = () => { if (w.onChange) w.onChange(); };
@@ -627,6 +627,7 @@ function hostWin(kind) {
     dockHint: "Повернути панель на її місце", closeHint: isDock ? "Сховати панель (повернеться на місце; відкрити знову — F9)" : "Сховати бічну панель",
     onClose: () => { isDock ? dockMainBack(true) : dockSideBack(true); }, onChange: () => { UIW[kind] = Object.assign(w.state(), { on: true }); saveUI(); } });
   w.onDockDrop = isDock ? () => dockMainBack() : null;
+  w.onDockBtn = isDock ? () => dockMainBack() : () => dockSideBack();
   w.onResize = () => { if (isDock) renderDock(); };
   w.body.appendChild(node);
   node.hidden = false;

@@ -14,15 +14,42 @@ function lySyl(word) {
 function lyLineSyl(line) {
   return line.split(/\s+/).reduce((s, w) => s + lySyl(w), 0);
 }
+const LY_ST = new Map();
+const LY_STQ = { busy: null, off: false };
 function lyStress(word) {
-  const raw = word.replace(/[^a-zа-яіїєґA-ZА-ЯІЇЄҐ+']/g, "");
-  const plus = raw.indexOf("+");
-  if (plus > 0) return raw.slice(0, plus).replace(/\+/g, "").length - 1;
-  const body = raw.replace(/\+/g, "");
+  const raw = word.replace(/[’ʼ`]/g, "'").replace(/[^a-zа-яіїєґA-ZА-ЯІЇЄҐ+']/g, "");
+  const plain = raw.replace(/'/g, "");
+  const plus = plain.indexOf("+");
+  if (plus > 0) return plain.slice(0, plus).replace(/\+/g, "").length - 1;
+  const body = plain.replace(/\+/g, "");
   if (body.length > 1 && body !== body.toUpperCase()) {
     for (let i = 1; i < body.length; i++) if (/[AEIOUYАЕЄИІЇОУЮЯ]/.test(body[i])) return i;
   }
-  return -1;
+  const k = LY_ST.get(raw.replace(/\+/g, "").toLowerCase().replace(/^'+|'+$/g, ""));
+  return k == null ? -1 : k;
+}
+async function lyStressLoad(words) {
+  if (LY_STQ.off) return 0;
+  const want = [...new Set((words || []).map((w) => String(w).replace(/[’ʼ`]/g, "'").toLowerCase().replace(/[^а-яіїєґ']/g, "").replace(/^'+|'+$/g, "")).filter((w) => w.length > 1 && /[а-яіїєґ]/.test(w) && !LY_ST.has(w)))];
+  if (!want.length) return 0;
+  if (LY_STQ.busy) await LY_STQ.busy.catch(() => {});
+  let got = 0;
+  const run = (async () => {
+    for (let i = 0; i < want.length; i += 4000) {
+      const part = want.slice(i, i + 4000).filter((w) => !LY_ST.has(w));
+      if (!part.length) continue;
+      const r = await api.post("/api/lyrics/stress", { words: part });
+      if (r && r.available === false) { LY_STQ.off = true; return; }
+      for (const w of part) { const v = r && r.stress ? r.stress[w] : -1; LY_ST.set(w, typeof v === "number" ? v : -1); if (v >= 0) got++; }
+    }
+  })();
+  LY_STQ.busy = run;
+  await run.catch(() => {});
+  if (LY_STQ.busy === run) LY_STQ.busy = null;
+  return got;
+}
+function lyWordsOf(text) {
+  return (String(text || "").match(/[a-zа-яіїєґ'’ʼ]+/gi) || []);
 }
 function lyNorm(word) {
   const w = word.toLowerCase().replace(/[^a-zа-яіїєґ]/g, "");
@@ -49,6 +76,13 @@ function lyRhymes(a, b) {
   const ka = lyRhymeKey(a), kb = lyRhymeKey(b);
   if (ka && ka === kb) return true;
   const { ua, w: wa } = lyNorm(a), wb = lyNorm(b).w, V = ua ? "аеіоу" : "aeiou";
+  if (ka[0] === "'" && kb[0] === "'") {
+    const ta = ka.slice(1), tb = kb.slice(1), sk = (x) => x.replace(new RegExp(`[^${V}]`, "g"), "");
+    const shape = (x) => x.replace(new RegExp(`[${V}]`, "g"), "V").replace(/[^V]+/g, "C");
+    if (!ta || !tb || ta[0] !== tb[0] || sk(ta) !== sk(tb) || shape(ta) !== shape(tb)) return false;
+    if (ta.slice(-2) === tb.slice(-2)) return true;
+    return V.includes(ta[ta.length - 1]) && ta.length <= 3 && tb.length <= 3 && ta.slice(-1) === tb.slice(-1);
+  }
   const openA = V.includes(wa[wa.length - 1]), openB = V.includes(wb[wb.length - 1]);
   return openA && openB && wa.length > 2 && wb.length > 2 && wa[wa.length - 1] === wb[wb.length - 1] && lyVowels(a) === lyVowels(b);
 }
@@ -80,10 +114,14 @@ function lyAnalyze(text) {
   flush();
   return out;
 }
-function lySuggest(word) {
-  const k = lyRhymeKey(word), lang = lyLang(word);
+function lyPool(word) {
+  const lang = lyLang(word);
   const learned = (UIP.lyWords || []).filter((x) => lyLang(x) === lang);
-  const pool = new Set([...(lang === "ua" ? LY_UA_WORDS : LY_EN_WORDS), ...learned, ...((S.mix && S.mix.lyrics) || "").toLowerCase().match(/[a-zа-яіїєґ']{3,}/gi) || []]);
+  return new Set([...(lang === "ua" ? LY_UA_WORDS : LY_EN_WORDS), ...learned, ...((S.mix && S.mix.lyrics) || "").toLowerCase().match(/[a-zа-яіїєґ']{3,}/gi) || []]);
+}
+function lySuggest(word) {
+  const k = lyRhymeKey(word);
+  const pool = lyPool(word);
   const strong = [], weak = [];
   for (const w of pool) {
     if (w === word.toLowerCase()) continue;
@@ -110,7 +148,7 @@ function openLyricsLab() {
       <div class="ly-bottom">
         <div class="ly-rh"><h5>Пошук рим</h5>
           <div class="arr-row"><input id="ly-word" placeholder="слово, напр. «серце» або «night»" data-hint="Слово, до якого шукати риму. Подвійний клік по слову в тексті теж підставить його сюди"><button class="btn ghost sm" id="ly-find">Знайти</button></div>
-          <div id="ly-res" class="ly-res muted small">Рими беруться з вбудованого словника, з вашого тексту й зі слів, які ви вже писали в інших піснях. Без позначки наголосу склад рими визначається за останнім голосним. Наголос можна позначити плюсом після голосної (се+рце) або великою літерою (сЕрце) — тоді рима рахується від наголошеного складу.</div></div>
+          <div id="ly-res" class="ly-res muted small">Рими беруться з вбудованого словника, з вашого тексту й зі слів, які ви вже писали в інших піснях. Наголос в українських словах програма визначає сама за словником на 2,9 млн словоформ, і рима рахується від наголошеного складу. Якщо слово має два наголоси (зАмок і замОк) або його немає в словнику, позначте наголос плюсом після голосної (се+рце) або великою літерою (сЕрце).</div></div>
         <div class="ly-notes"><h5>Текст на ноти</h5>
           <p class="muted small">Склади тексту розкладаються по нотах мелодії — по одному складу на ноту. Їх видно в піано-ролі, нотному записі й MIDI-експорті. Поставте курсор у рядок, з якого почати.</p>
           <div class="arr-row"><label>Доріжка <select id="ly-t">${tl.map((t) => `<option value="${escapeHtml(t.id)}" ${t.id === S.sel ? "selected" : ""}>${escapeHtml(t.name)}</option>`).join("")}</select></label><label>від такту <input type="number" id="ly-bar" min="1" value="${hmBarAt(S.playBeat)}"></label></div>
@@ -134,13 +172,15 @@ function openLyricsLab() {
     $("#ly-an", m).innerHTML = html + (tips.length ? `<div class="ly-tips">${tips.slice(0, 4).map((x) => `<p>💡 ${escapeHtml(x)}</p>`).join("")}</div>` : "");
   };
   render();
+  lyStressLoad(lyWordsOf(ta.value).concat(LY_UA_WORDS, UIP.lyWords || [])).then((n) => { if (n && !m.hidden) render(); });
   let st = 0;
-  ta.oninput = () => { S.mix.lyrics = ta.value; clearTimeout(st); st = setTimeout(() => { saveMix(); render(); lyLearn(ta.value); }, 250); };
+  ta.oninput = () => { S.mix.lyrics = ta.value; clearTimeout(st); st = setTimeout(() => { saveMix(); render(); lyLearn(ta.value); lyStressLoad(lyWordsOf(ta.value)).then((n) => { if (n && !m.hidden) render(); }); }, 250); };
   ta.ondblclick = () => { const s = ta.value.slice(0, ta.selectionEnd), w = (s.match(/[a-zа-яіїєґ']+$/i) || [""])[0] + (ta.value.slice(ta.selectionEnd).match(/^[a-zа-яіїєґ']+/i) || [""])[0]; if (w) { $("#ly-word", m).value = w; $("#ly-find", m).click(); } };
   $("[data-close]", m).onclick = () => { m.hidden = true; };
-  const find = () => {
+  const find = async () => {
     const w = $("#ly-word", m).value.trim();
     if (!w) return;
+    await lyStressLoad([w, ...lyPool(w)]);
     const r = lySuggest(w);
     $("#ly-res", m).innerHTML = (r.strong.length ? `<b>Рими:</b> ${r.strong.map((x) => `<button class="ly-w">${escapeHtml(x)}</button>`).join("")}` : "Точних рим у словнику немає.") + (r.weak.length ? `<br><b>Співзвучні:</b> ${r.weak.map((x) => `<button class="ly-w">${escapeHtml(x)}</button>`).join("")}` : "");
     $$(".ly-w", m).forEach((b) => b.onclick = () => { const p = ta.selectionStart; ta.setRangeText(b.textContent, p, ta.selectionEnd, "end"); ta.focus(); ta.oninput(); });

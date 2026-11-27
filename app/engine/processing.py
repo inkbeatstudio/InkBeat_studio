@@ -21,7 +21,7 @@ OPS = {
     "pitchedit": "Редактор висоти нот", "breath": "Прибрати вдихи й клацання", "rider": "Вокал-райдер (рівна гучність)",
     "align": "Вирівнювання за часом", "vst": "VST-плагін", "deshimmer": "Прибрати цифрові артефакти", "dereverb": "Прибрати реверберацію",
     "highs": "Відновити верхи", "drumreplace": "Заміна барабанів", "quantize": "Квантування аудіо",
-    "stretch": "Розтягування в часі", "formant": "Тембр голосу", "tempomap": "Підгонка під доріжку темпу", "harmony": "Вокальна гармонія",
+    "stretch": "Розтягування в часі", "formant": "Тембр голосу", "tempomap": "Підгонка під доріжку темпу", "tempoclips": "Підгонка кліпів під доріжку темпу", "harmony": "Вокальна гармонія",
 }
 
 
@@ -501,11 +501,15 @@ def apply_op(pdir: Path, project: dict, base: str, source: str | None, op: str, 
     elif op == "harmony":
         from .creative import harmonize_voice
 
-        res, stats = harmonize_voice(y, sr, p.get("notes") or [], bool(p.get("keep_gaps")), progress)
+        res, stats = harmonize_voice(y, sr, p.get("notes") or [], bool(p.get("keep_gaps")), progress, p.get("auto"))
     elif op == "tempomap":
         from .creative import tempo_warp
 
         res, stats = tempo_warp(y, sr, p.get("segs") or [], progress)
+    elif op == "tempoclips":
+        from .creative import tempo_clips
+
+        res, stats = tempo_clips(y, sr, p.get("pieces") or [], progress)
     elif op == "formant":
         from .creative import formant
 

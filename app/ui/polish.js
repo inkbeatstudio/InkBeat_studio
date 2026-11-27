@@ -3,13 +3,20 @@ async function tmWarpAll() {
   if (!tmActive()) return toast("Спершу додайте зміни темпу.", true);
   const P = period(), pad = S.B.timing.pad, base = tmBase();
   const segs = tmSegs();
-  const src = segs.map((sg, i) => [sg.m * P - pad, i + 1 < segs.length ? segs[i + 1].m * P - pad : 1e9, sg.bpm / base]);
   const W = (ts) => tmU((ts + pad) / P) * P - pad;
-  const audio = tracksAll().filter((t) => t.has_audio);
-  const moved = tracksAll().filter((t) => mt(t.id).clips.some((c) => Math.abs(c.start - (c.src + pad) / P) > 0.05));
+  const audio = tracksAll().filter((t) => t.has_audio && mt(t.id).clips.length);
+  const clipSegs = (c) => {
+    const t0 = c.start * P, out = [];
+    segs.forEach((sg, i) => {
+      const a = sg.m * P - t0, b = i + 1 < segs.length ? segs[i + 1].m * P - t0 : 1e9;
+      if (b <= 0 || a >= c.dur) return;
+      out.push([+Math.max(0, a).toFixed(5), +Math.min(b, 1e7).toFixed(5), +(sg.bpm / base).toFixed(6)]);
+    });
+    return out.length ? out : [[0, 1e7, 1]];
+  };
   const ok = await inkConfirm("Підігнати аудіо й ноти під темп", `<p>Зараз доріжка темпу змінює лише сітку. Ця дія один раз перебудує саму музику під неї:</p>
     <ul><li>аудіо ${audio.length} доріжок розтягнеться чи стиснеться по частинах (висота не зміниться);</li><li>ноти MIDI-доріжок, акорди, секції й автоматизація стануть на свої такти в новому темпі.</li></ul>
-    ${moved.length ? `<p class="warn">Увага: на ${moved.length} доріжках кліпи пересунуті чи скопійовані. Їх розташування теж перерахується, але найточніше підгонку робити до розстановки кліпів.</p>` : ""}
+    <p class="muted small">Кожен кліп підганяється окремо — під темп того місця, де він стоїть, тож пересунуті й скопійовані кліпи теж звучатимуть рівно.</p>
     <p class="muted small">Обробка аудіо створює нові версії доріжок (оригінал лишається у «Версіях»). Ноти й розмітку скасовує Ctrl+Z.</p>`, "Підігнати");
   if (!ok) return;
   pushUndo("підгонка під темп");
@@ -31,12 +38,22 @@ async function tmWarpAll() {
       k++;
       $("#wp-st", m).textContent = `Аудіо «${t.name}» (${k} з ${audio.length})…`;
       const T = mt(t.id);
-      const r = await api.post(`/api/project/${S.pid}/process`, { base: baseId(t), source: T.source, op: "tempomap", params: { segs: src.map((x) => [+x[0].toFixed(5), +Math.min(x[1], 1e7).toFixed(5), +x[2].toFixed(6)]) } });
+      const pieces = T.clips.map((c) => { const lead = Math.max(0, -c.src); return [+Math.max(0, c.src).toFixed(5), +Math.max(0, c.src + c.dur).toFixed(5), clipSegs(c).map(([x, y, r]) => [+Math.max(0, x - lead).toFixed(5), +Math.max(0, y - lead).toFixed(5), r])]; });
+      const r = await api.post(`/api/project/${S.pid}/process`, { base: baseId(t), source: T.source, op: "tempoclips", params: { pieces } });
       let j;
       for (;;) { await new Promise((res) => setTimeout(res, 400)); j = await api.get(`/api/process/${r.job}`); $("#wp-bar", m).style.width = Math.round(((k - 1) + j.progress) / audio.length * 100) + "%"; if (j.status !== "running") break; }
       if (j.status === "error") throw new Error(j.error);
+      const offs = (j.result.stats || {}).pieces || [];
       T.source = j.result.vid;
-      for (const c of T.clips) { const a = W(c.src), b = W(c.src + c.dur), st = mapB(c.start); c.src = +a.toFixed(5); c.dur = +(b - a).toFixed(5); c.start = +st.toFixed(5); }
+      T.clips.forEach((c, i) => {
+        const o = offs[i];
+        if (!o) return;
+        const lead = Math.max(0, -c.src), st = mapB(c.start), newLead = lead ? (tmU(c.start + lead / P) - st) * P : 0;
+        const e = mapB(c.start + c.dur / P);
+        c.src = +(o[0] - newLead).toFixed(5);
+        c.dur = +Math.max(0.01, (e - st) * P).toFixed(5);
+        c.start = +st.toFixed(5);
+      });
     }
     for (const t of tracksAll()) { if (t.has_audio) continue; for (const c of mt(t.id).clips) { const a = W(c.src), b = W(c.src + c.dur); c.dur = +Math.max(c.dur, b - a).toFixed(5); } }
     S.versions = await api.get(`/api/project/${S.pid}/versions`);

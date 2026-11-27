@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        id: v
+        run: |
+          VER=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' app/engine/project.py | head -n 1)
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VER" >/dev/null 2>&1; then echo "exists=1" >> "$GITHUB_OUTPUT"; else echo "exists=0" >> "$GITHUB_OUTPUT"; fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Tools
+        if: steps.v.outputs.exists == '0'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nsis
+          pip install --quiet pillow
+
+      - name: Build
+        if: steps.v.outputs.exists == '0'
+        run: bash tools/build_all.sh
+
+      - name: Publish
+        if: steps.v.outputs.exists == '0'
+        run: |
+          python3 tools/release_notes.py "${{ steps.v.outputs.ver }}" > notes.md
+          gh release create "v${{ steps.v.outputs.ver }}" \
+            --title "InkBeat ${{ steps.v.outputs.ver }}" \
+            --notes-file notes.md \
+            dist/InkBeat-update.zip dist/InkBeat-update.zip.sha256 \
+            dist/InkBeat-Setup-Windows.exe dist/InkBeat-Setup-Linux.run dist/InkBeat-macOS.zip
+        env:
+          GH_TOKEN: ${{ github.token }}

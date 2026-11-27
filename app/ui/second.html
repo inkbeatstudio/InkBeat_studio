@@ -37,6 +37,11 @@ html, body { margin: 0; height: 100%; background: #0c0d11; color: #e9ebf1; font-
 <div class="idle" id="idle">Чекаю на програму… Почніть відтворення в головному вікні.</div>
 <script>
 "use strict";
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  const a = window.pywebview && window.pywebview.api;
+  if (a && a.close_second) a.close_second(); else window.close();
+});
 let last = 0, bc = null;
 const $ = (id) => document.getElementById(id);
 const EN = localStorage.getItem("inkbeat.lang") === "en";

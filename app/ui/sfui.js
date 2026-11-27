@@ -10,7 +10,7 @@ function multiNote(ctx, out, inst, pitch, vel, t0, dur, buffers) {
     if (!buf) continue;
     const s = ctx.createBufferSource();
     s.buffer = buf;
-    s.playbackRate.value = Math.pow(2, (pitch - z.root) / 12 + ((z.tune || 0) + (P.tune || 0) * 100) / 1200);
+    s.playbackRate.value = Math.pow(2, (z.fixed ? 0 : (pitch - z.root) / 12) + ((z.tune || 0) + (P.tune || 0) * 100) / 1200);
     if (z.loop && z.loop[1] > z.loop[0] + 0.002) {
       s.loop = true;
       s.loopStart = z.loop[0];
@@ -31,7 +31,7 @@ function multiNote(ctx, out, inst, pitch, vel, t0, dur, buffers) {
     const sus = z.s ?? 1, dec = Math.max(0.01, z.d || 1);
     g.gain.setValueAtTime(0, t0);
     g.gain.linearRampToValueAtTime(peak, t0 + a);
-    if (sus < 0.999) g.gain.setTargetAtTime(Math.max(1e-4, peak * sus), t0 + a, dec / 4);
+    if (sus < 0.999) g.gain.setTargetAtTime(Math.max(1e-4, peak * sus), t0 + a + Math.min(20, z.h || 0), dec / 4);
     s.start(t0);
     const tOff = t0 + Math.max(0.03, dur);
     if (!s.loop && !inst.drums && buf.duration / s.playbackRate.value < Math.max(0.03, dur)) {

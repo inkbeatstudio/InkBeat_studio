@@ -8,17 +8,55 @@ function peakDb(buf) {
   for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i += 2) { const v = Math.abs(d[i]); if (v > p) p = v; } }
   return 20 * Math.log10(p + 1e-9);
 }
+async function lufsFull(masterFx, onProgress, isCancelled) {
+  const P = period(), T = arrEnd() * P, SUB = 0.1, CH = 300, PRE = 4;
+  const N = Math.max(4, Math.floor(T / SUB)), subs = new Float64Array(N);
+  let peak = 0, done = 0;
+  for (let k0 = 0; k0 < N; k0 += CH) {
+    if (isCancelled && isCancelled()) throw new Error(tr("Скасовано"));
+    const k1 = Math.min(N, k0 + CH), t0 = k0 * SUB, t1 = k1 * SUB, f0 = Math.max(0, t0 - PRE);
+    const buf = await renderMixQuick(masterFx, f0 / P, t1 / P);
+    const fs = buf.sampleRate, hop = fs * SUB, skip = Math.round((t0 - f0) * fs), coefs = kFilterCoefs(fs);
+    const nch = Math.min(2, buf.numberOfChannels);
+    for (let c = 0; c < 2; c++) {
+      const raw = buf.getChannelData(Math.min(c, nch - 1));
+      let x = raw;
+      for (const [[b0, b1, b2], [, a1, a2]] of coefs) {
+        const y = new Float32Array(x.length); let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+        for (let i = 0; i < x.length; i++) { const v = b0 * x[i] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = x[i]; y2 = y1; y1 = v; y[i] = v; }
+        x = y;
+      }
+      for (let k = k0; k < k1; k++) {
+        const a = skip + Math.round((k - k0) * hop), b = Math.min(x.length, skip + Math.round((k - k0 + 1) * hop));
+        let e = 0;
+        for (let i = a; i < b; i++) { e += x[i] * x[i]; const v = Math.abs(raw[i]); if (v > peak) peak = v; }
+        subs[k] += b > a ? e / (b - a) : 0;
+      }
+    }
+    done = k1;
+    if (onProgress) onProgress(done / N);
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  const L = (z) => -0.691 + 10 * Math.log10(z + 1e-12), zs = [];
+  for (let k = 0; k + 4 <= N; k++) zs.push((subs[k] + subs[k + 1] + subs[k + 2] + subs[k + 3]) / 4);
+  let g = zs.filter((z) => L(z) > -70);
+  if (!g.length) return { lufs: -70, peak: 20 * Math.log10(peak + 1e-9) };
+  const rel = L(g.reduce((a, b) => a + b, 0) / g.length) - 10;
+  g = g.filter((z) => L(z) > rel);
+  return { lufs: g.length ? L(g.reduce((a, b) => a + b, 0) / g.length) : -70, peak: 20 * Math.log10(peak + 1e-9) };
+}
 async function openLoudness() {
   if (!S.B || S.view !== "project") return toast("Спершу відкрийте проєкт.", true);
-  const m = careModalBox("loud-modal", "Гучність для платформ", `<p class="muted">Стрімінги вирівнюють гучність: занадто гучний трек вони стишують (і він втрачає динаміку даремно), занадто тихий — звучить слабше за інші. Програма зведе весь мікс з ефектами Master і порівняє з вимогами платформ.</p>
-    <div class="pbar"><div id="ld-bar" style="width:10%"></div></div><p class="muted small" id="ld-st">Зводжу мікс…</p><div id="ld-body"></div>`);
+  const m = careModalBox("loud-modal", "Гучність для платформ", `<p class="muted">Стрімінги вирівнюють гучність: занадто гучний трек вони стишують (і він втрачає динаміку даремно), занадто тихий — звучить слабше за інші. Програма зведе всю пісню від початку до кінця з ефектами Master і порівняє з вимогами платформ.</p>
+    <div class="pbar"><div id="ld-bar" style="width:0%"></div></div><p class="muted small" id="ld-st">Зводжу мікс…</p><div id="ld-body"></div>
+    <div class="modal-actions"><button class="btn ghost" id="ld-cancel" data-hint="Зупинити перевірку. Нічого не зміниться">Скасувати</button></div>`);
+  const run = { stop: false };
+  $("#ld-cancel", m).onclick = () => { run.stop = true; m.hidden = true; };
   try {
-    const P = period(), L = arrEnd(), maxB = 75 / P, part = L > maxB;
-    const a0 = part ? Math.max(0, L / 2 - maxB / 2) : 0;
-    const buf = await renderMixQuick(S.mix.master.fx || [], a0, part ? a0 + maxB : null);
-    $("#ld-bar", m).style.width = "100%";
-    const lu = lufsOf(buf), pk = peakDb(buf);
-    $("#ld-st", m).innerHTML = `Ваш мікс: <b>${lu.toFixed(1)} LUFS</b>, пік <b>${pk.toFixed(1)} дБ</b>${part ? " (оцінка за 75 секунд із середини пісні)" : ""}.`;
+    const r = await lufsFull(S.mix.master.fx || [], (f) => { $("#ld-bar", m).style.width = Math.round(f * 100) + "%"; $("#ld-st", m).textContent = `${tr("Зводжу мікс…")} ${Math.round(f * 100)}%`; }, () => run.stop || m.hidden);
+    $("#ld-cancel", m).parentElement.remove();
+    const lu = r.lufs, pk = r.peak;
+    $("#ld-st", m).innerHTML = `Ваш мікс: <b>${lu.toFixed(1)} LUFS</b>, пік <b>${pk.toFixed(1)} дБ</b> (уся пісня).`;
     $("#ld-body", m).innerHTML = `<table class="tm-table"><thead><tr><th>Платформа</th><th>Ціль</th><th>Що станеться</th><th></th></tr></thead><tbody>${LOUD_TARGETS.map(([k, n, t, c]) => {
       const d = t - lu, over = pk > c;
       const what = Math.abs(d) < 1 ? `<span class="ok">ідеально</span>` : d < 0 ? `стишить на ${(-d).toFixed(1)} дБ` : `тихіше за інших на ${d.toFixed(1)} дБ`;
@@ -39,6 +77,7 @@ async function openLoudness() {
       openLoudness();
     });
   } catch (e) {
+    if (run.stop || m.hidden) return;
     $("#ld-st", m).textContent = "Не вдалося звести мікс: " + e.message;
   }
 }
@@ -165,9 +204,9 @@ async function openAlbum() {
   if (!ALB.pids.length && S.pid) ALB.pids = [S.pid];
   ALB.pids = ALB.pids.filter((id) => list.some((p) => p.id === id));
   const st = await api.post("/api/album/status", { pids: ALB.pids }).catch(() => []);
-  const m = careModalBox("album-modal", "Альбом", `<p class="muted">Зберіть кілька пісень в альбом: порядок, паузи, однакова гучність і спільний лімітер, обкладинки й теги в MP3, повний файл альбому та CUE-розмітка. Для кожної пісні спершу зробіть «Експорт» з готовим міксом.</p>
+  const m = careModalBox("album-modal", "Альбом", `<p class="muted">Зберіть кілька пісень в альбом: порядок, паузи, однакова гучність і спільний лімітер, обкладинки й теги в MP3, повний файл альбому та CUE-розмітка. Пісні без готового міксу InkBeat зведе сам перед збиранням: з усіма вашими ефектами, інструментами й автоматизацією.</p>
     <div class="alb">
-      <div><h5>Пісні альбому</h5><div class="alb-list">${ALB.pids.map((id, i) => { const p = list.find((x) => x.id === id), s = st.find((x) => x.pid === id); return `<div class="alb-row" data-i="${i}"><b>${i + 1}.</b><span>${escapeHtml(p ? p.title : id)}</span>${s && s.mix ? `<span class="ok small">мікс є</span>` : `<span class="warn small">немає міксу — зробіть експорт</span>`}<span class="spacer"></span><button data-up>▲</button><button data-dn>▼</button><button data-rm>✕</button></div>`; }).join("") || `<div class="dock-empty">Додайте пісні зі списку праворуч.</div>`}</div></div>
+      <div><h5>Пісні альбому</h5><div class="alb-list">${ALB.pids.map((id, i) => { const p = list.find((x) => x.id === id), s = st.find((x) => x.pid === id); return `<div class="alb-row" data-i="${i}"><b>${i + 1}.</b><span>${escapeHtml(p ? p.title : id)}</span>${s && s.mix ? `<span class="ok small">мікс є</span>` : `<span class="muted small" data-hint="Перед збиранням InkBeat сам зведе цю пісню у фоні — на це йде приблизно стільки часу, скільки триває пісня">зведу автоматично</span>`}<span class="spacer"></span><button data-up>▲</button><button data-dn>▼</button><button data-rm>✕</button></div>`; }).join("") || `<div class="dock-empty">Додайте пісні зі списку праворуч.</div>`}</div></div>
       <div><h5>Усі проєкти</h5><div class="alb-list">${list.filter((p) => !ALB.pids.includes(p.id)).map((p) => `<div class="alb-row"><span>${escapeHtml(p.title)}</span><span class="spacer"></span><button data-add="${escapeHtml(p.id)}">＋</button></div>`).join("")}</div></div>
     </div>
     <div class="mel-grid">
@@ -191,12 +230,20 @@ async function openAlbum() {
     keep();
     $("#alb-go", m).disabled = true;
     try {
-      const r = await api.post("/api/album/build", { pids: ALB.pids, title: ALB.title, artist: ALB.artist, year: ALB.year, genre: ALB.genre, target: ALB.target, gap: ALB.gap, ceiling: -1 });
+      const bar = $("#alb-bar", m), stl = $("#alb-st", m);
+      const pre = await ensureMixes(ALB.pids.slice(), (pid, i, n, msg, f) => {
+        const p = list.find((x) => x.id === pid);
+        bar.style.width = Math.round(((i + (f || 0)) / n) * 100) + "%";
+        stl.textContent = `${tr("Зводжу пісню")} ${i + 1}/${n} «${p ? p.title : pid}»: ${msg || ""}`;
+      });
+      if (pre.failed.length) toast(`${tr("Не вдалося звести")}: ${pre.failed.map(([id, e]) => { const p = list.find((x) => x.id === id); return (p ? p.title : id) + " (" + e + ")"; }).join(", ")}`);
+      bar.style.width = "0%";
+      const r = await api.post("/api/album/build", { pids: ALB.pids, title: ALB.title, artist: ALB.artist, year: ALB.year, genre: ALB.genre, target: ALB.target, gap: ALB.gap, ceiling: -1, lang: LANG });
       let j;
       for (;;) { await new Promise((res) => setTimeout(res, 600)); j = await api.get(`/api/process/${r.job}`); $("#alb-bar", m).style.width = Math.round(j.progress * 100) + "%"; $("#alb-st", m).textContent = `Обробляю… ${Math.round(j.progress * 100)}%`; if (j.status !== "running") break; }
       if (j.status === "error") throw new Error(j.error);
       const res = j.result;
-      $("#alb-st", m).innerHTML = `Готово: ${res.tracks.length} пісень${res.missing.length ? `, пропущено без міксу: ${escapeHtml(res.missing.join(", "))}` : ""}. ${res.tracks.map((t) => `${t.n}. ${escapeHtml(t.title)}: ${t.lufs_before} → ${t.lufs_after} LUFS`).join("; ")} <button class="btn ghost sm" id="alb-open">Відкрити папку</button>`;
+      $("#alb-st", m).innerHTML = `Готово: ${res.tracks.length} пісень${res.missing.length ? `, не вдалося звести: ${escapeHtml(res.missing.join(", "))}` : ""}. ${res.tracks.map((t) => `${t.n}. ${escapeHtml(t.title)}: ${t.lufs_before} → ${t.lufs_after} LUFS`).join("; ")} <button class="btn ghost sm" id="alb-open">Відкрити папку</button>`;
       $("#alb-open", m).onclick = () => api.post("/api/album/open", { path: res.dir });
     } catch (e) { $("#alb-st", m).textContent = "Не вдалося: " + e.message; }
     $("#alb-go", m).disabled = false;

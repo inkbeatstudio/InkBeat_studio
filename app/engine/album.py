@@ -128,8 +128,9 @@ def build(pids: list[str], opts: dict, progress=None) -> dict:
             progress((i + 1) / len(pids))
     if full:
         allw = np.concatenate(full, axis=1)
-        P.save_wav(out / f"{P.slugify(title)} - повний альбом.wav", allw, sr, "PCM_24")
-        lines = [f'PERFORMER "{artist}"', f'TITLE "{title}"', f'FILE "{P.slugify(title)} - повний альбом.wav" WAVE']
+        full_name = f"{P.slugify(title)} - {'full album' if opts.get('lang') == 'en' else 'повний альбом'}.wav"
+        P.save_wav(out / full_name, allw, sr, "PCM_24")
+        lines = [f'PERFORMER "{artist}"', f'TITLE "{title}"', f'FILE "{full_name}" WAVE']
         for n, t, s in cue:
             m, sec = divmod(s, 60)
             fr = int(round((sec - int(sec)) * 75))

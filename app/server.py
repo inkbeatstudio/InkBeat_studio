@@ -576,6 +576,33 @@ def _lan_ip() -> str:
         s2.close()
 
 
+FW_RULE = "InkBeat-Phone"
+
+
+def _firewall() -> str:
+    if sys.platform != "win32":
+        return "n/a"
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        r = subprocess.run(["netsh", "advfirewall", "firewall", "show", "rule", f"name={FW_RULE}"],
+                           capture_output=True, timeout=15, creationflags=flags)
+        if r.returncode == 0:
+            return "ok"
+    except Exception:
+        return "unknown"
+    args = (f'advfirewall firewall add rule name={FW_RULE} dir=in action=allow protocol=TCP '
+            f'localport=47900-47919 remoteip=localsubnet profile=any enable=yes')
+    ps = f"Start-Process -FilePath netsh -ArgumentList '{args}' -Verb RunAs -WindowStyle Hidden -Wait"
+    try:
+        subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+                       capture_output=True, timeout=180, creationflags=flags)
+        r = subprocess.run(["netsh", "advfirewall", "firewall", "show", "rule", f"name={FW_RULE}"],
+                           capture_output=True, timeout=15, creationflags=flags)
+        return "added" if r.returncode == 0 else "declined"
+    except Exception:
+        return "declined"
+
+
 def _phone_app():
     import json as _json
     import secrets
@@ -614,6 +641,159 @@ def _phone_app():
     return papp
 
 
+@app.get("/api/content/builtin")
+def content_builtin():
+    from .engine import content as CT
+
+    return jsonify({"items": CT.builtin_list()})
+
+
+@app.post("/api/project/<pid>/content/builtin")
+def content_builtin_zones(pid):
+    from .engine import content as CT
+
+    data = request.get_json(force=True) or {}
+    try:
+        return jsonify(CT.builtin_zones(_pdir(pid), int(data.get("index", 0))))
+    except Exception as e:
+        return jsonify({"error": _friendly(e)}), 400
+
+
+@app.get("/api/content/packs")
+def content_packs():
+    from .engine import content as CT
+
+    return jsonify({"packs": CT.packs_status()})
+
+
+@app.get("/api/content/pack/<pack>/<inst>")
+def content_pack_zones(pack, inst):
+    from .engine import content as CT
+
+    try:
+        return jsonify(CT.pack_zones(pack, inst))
+    except Exception as e:
+        return jsonify({"error": _friendly(e)}), 404
+
+
+@app.post("/api/content/install")
+def content_install():
+    from .engine import content as CT
+
+    data = request.get_json(force=True) or {}
+    jid = uuid.uuid4().hex[:10]
+    job = {"id": jid, "status": "running", "progress": 0.0, "result": None, "error": None, "cancel": False}
+    PROC_JOBS[jid] = job
+
+    def work():
+        try:
+            job["result"] = CT.install(str(data.get("pack")), progress=lambda x: job.__setitem__("progress", float(x)),
+                                       cancel=lambda: job.get("cancel"), only=data.get("only") or None)
+            job["status"] = "done"
+        except Exception as e:
+            job["status"] = "error"
+            job["error"] = "Скасовано." if job.get("cancel") else _friendly(e)
+
+    threading.Thread(target=work, daemon=True).start()
+    return jsonify({"job": jid})
+
+
+@app.post("/api/content/cancel/<jid>")
+def content_cancel(jid):
+    job = PROC_JOBS.get(jid)
+    if job:
+        job["cancel"] = True
+    return jsonify({"ok": True})
+
+
+@app.post("/api/content/uninstall")
+def content_uninstall():
+    from .engine import content as CT
+
+    data = request.get_json(force=True) or {}
+    try:
+        return jsonify(CT.uninstall(str(data.get("pack")), data.get("inst") or None))
+    except Exception as e:
+        return jsonify({"error": _friendly(e)}), 400
+
+
+def _sbk_job(fn):
+    jid = uuid.uuid4().hex[:10]
+    job = {"id": jid, "status": "running", "progress": 0.0, "result": None, "error": None, "cancel": False}
+    PROC_JOBS[jid] = job
+
+    def work():
+        try:
+            fn(job)
+            job["status"] = "done"
+        except Exception as e:
+            job["status"] = "error"
+            job["error"] = "Скасовано." if job.get("cancel") else _friendly(e)
+
+    threading.Thread(target=work, daemon=True).start()
+    return jsonify({"job": jid})
+
+
+@app.get("/api/soundbank")
+def soundbank_list():
+    from .engine import soundbank as SBK
+
+    return jsonify(SBK.listing())
+
+
+@app.post("/api/soundbank/build")
+def soundbank_build():
+    from .engine import soundbank as SBK
+
+    return _sbk_job(lambda job: job.__setitem__("result", len(SBK.build_essentials(lambda x: job.__setitem__("progress", float(x))))))
+
+
+@app.post("/api/soundbank/sonicpi/install")
+def soundbank_sonicpi_install():
+    from .engine import soundbank as SBK
+
+    return _sbk_job(lambda job: job.__setitem__("result", len(SBK.install_sonicpi(lambda x: job.__setitem__("progress", float(x)), lambda: job.get("cancel")))))
+
+
+@app.post("/api/soundbank/sonicpi/remove")
+def soundbank_sonicpi_remove():
+    from .engine import soundbank as SBK
+
+    return jsonify(SBK.remove_sonicpi())
+
+
+@app.get("/api/soundbank/file")
+def soundbank_file():
+    from .engine import soundbank as SBK
+
+    f = SBK.path(request.args.get("f", ""))
+    if not f:
+        abort(404)
+    return send_file(f, mimetype="audio/wav", max_age=3600)
+
+
+@app.get("/api/soundbank/fit")
+def soundbank_fit():
+    import io
+
+    from .engine import soundbank as SBK
+
+    try:
+        data = SBK.fit(request.args.get("f", ""), float(request.args.get("factor", 1)), float(request.args.get("semis", 0)))
+    except FileNotFoundError:
+        abort(404)
+    return send_file(io.BytesIO(data), mimetype="audio/wav")
+
+
+@app.post("/api/lyrics/stress")
+def lyrics_stress():
+    from .engine import stress as ST
+
+    data = request.get_json(force=True) or {}
+    words = [w for w in (data.get("words") or []) if isinstance(w, str)]
+    return jsonify({"available": ST.available(), "stress": ST.lookup(words)})
+
+
 @app.post("/api/phone/start")
 def phone_start():
     import secrets
@@ -632,7 +812,10 @@ def phone_start():
             return jsonify({"error": _friendly(last)}), 500
         PHONE.update(srv=srv, port=port, token=secrets.token_urlsafe(5), ip=_lan_ip())
         threading.Thread(target=srv.serve_forever, daemon=True).start()
-    return jsonify({"url": f"http://{PHONE['ip']}:{PHONE['port']}/?k={PHONE['token']}", "ip": PHONE["ip"], "port": PHONE["port"], "token": PHONE["token"]})
+    if not PHONE.get("fw") or PHONE.get("fw") == "declined" and (request.get_json(silent=True) or {}).get("retry_fw"):
+        PHONE["fw"] = _firewall()
+    return jsonify({"url": f"http://{PHONE['ip']}:{PHONE['port']}/?k={PHONE['token']}", "ip": PHONE["ip"], "port": PHONE["port"],
+                    "token": PHONE["token"], "firewall": PHONE.get("fw"), "lan": not PHONE["ip"].startswith("127.")})
 
 
 @app.post("/api/phone/stop")
@@ -885,6 +1068,20 @@ def project_kit(pid):
 
 @app.get("/api/project/<pid>/sample")
 def project_sample(pid):
+    if request.args.get("f", "").startswith("sb:"):
+        from .engine import soundbank as SBK
+
+        f = SBK.path(request.args["f"])
+        if not f:
+            abort(404)
+        return send_file(f, mimetype="audio/wav", max_age=3600)
+    if request.args.get("f", "").startswith("pack:"):
+        from .engine import content as CT
+
+        f = CT.file_path(request.args["f"])
+        if not f:
+            abort(404)
+        return send_file(f, mimetype="audio/wav", max_age=3600)
     if request.args.get("f", "").startswith("lib:"):
         f = X.sample_path(request.args["f"])
         if not f:
@@ -904,6 +1101,16 @@ def project_guide(pid):
     if not g:
         P.export(pid)
         g = sorted((d / "export").rglob("*.html"))
+    if request.args.get("lang") == "en":
+        from .engine import i18n as I18
+
+        try:
+            pj = P.load_project(pid)
+            keep = I18.keep_names(pj, P.build(pid).get("tracks")) + [P.slugify(pj.get("title") or "")]
+        except Exception:
+            keep = []
+        html = I18.tr_html(g[0].read_text(encoding="utf-8"), keep).replace('lang="uk"', 'lang="en"')
+        return app.response_class(html, mimetype="text/html")
     return send_file(g[0], mimetype="text/html", max_age=0)
 
 

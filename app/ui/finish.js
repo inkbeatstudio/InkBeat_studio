@@ -431,7 +431,7 @@ async function renderVersion(key, progress) {
           await renderVersion(k);
         }
         prog("Записую пісню, доріжки, MIDI і семпли…", 0.97);
-        const r = await api.post(`/api/project/${S.pid}/export`, Object.assign({ use_render: true, mixdown: $("#ex-mix").checked, edited: $("#ex-midi").checked ? editedMidi() : null }, exportExtras()));
+        const r = await api.post(`/api/project/${S.pid}/export`, Object.assign({ use_render: true, mixdown: $("#ex-mix").checked, edited: $("#ex-midi").checked ? editedMidi() : null, lang: LANG }, exportExtras()));
         showExportDone(r);
       } catch (err) {
         $("#ex-title").textContent = "Помилка експорту";
