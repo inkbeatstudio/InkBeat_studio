@@ -255,6 +255,7 @@ function vsPhrases() {
   return list;
 }
 function vsBg(g, W, H, beat) {
+  if (VS.noBg) return;
   const u = Math.min(W, H) / 1080;
   if (VS.bg === "cover" && VS.cover) {
     const k = W + "x" + H + VS.cover.src;
@@ -346,6 +347,15 @@ function vsCoverArt(g, x, y, s, lvl) {
   }
 }
 function vsHeader(g, W, H, beat, ins, compact) {
+  if (VS.bare) {
+    g.save();
+    g.globalAlpha = 0;
+    VS.bare = false;
+    const y = vsHeader(g, W, H, beat, ins, compact);
+    VS.bare = true;
+    g.restore();
+    return y;
+  }
   const u = ins.u, vertical = H > W;
   g.textBaseline = "alphabetic";
   g.fillStyle = "#eef0f5";
@@ -379,6 +389,7 @@ function vsHeader(g, W, H, beat, ins, compact) {
   return ty + 44 * u;
 }
 function vsFooter(g, W, H, fr, ins) {
+  if (VS.bare) return;
   const u = ins.u, P = period();
   const y = H - ins.b - (VS.wm ? 64 : 10) * u;
   const k = Math.max(0, Math.min(1, (fr.beat - fr.r0) / Math.max(1e-6, fr.r1 - fr.r0)));
@@ -397,7 +408,7 @@ function vsFooter(g, W, H, fr, ins) {
   if (VS.wm) vsWatermark(g, ins.l, H - ins.b - 36 * u, u);
 }
 function vsLyrics(g, W, H, fr, ins, yCenter) {
-  if (!VS.lyrics) return;
+  if (!VS.lyrics || VS.bare) return;
   const b = fr.beat, p = vsPhrases().filter((x) => b >= x.start - 0.25 && b < x.end).pop();
   if (!p) return;
   const u = ins.u, a = Math.min(1, (b - p.start + 0.25) / 0.35, (p.end - b) / 0.35);
@@ -426,6 +437,7 @@ function vsLyrics(g, W, H, fr, ins, yCenter) {
   g.restore();
 }
 function vsOverlays(g, W, H, fr, ins) {
+  if (VS.bare) return;
   const P = period(), t = (fr.beat - fr.r0) * P, dur = (fr.r1 - fr.r0) * P, u = ins.u;
   if (VS.intro && t < 2.4 && dur > 6) {
     const a = t < 1.7 ? 1 : Math.max(0, 1 - (t - 1.7) / 0.7), s = 1 + 0.04 * Math.min(1, t / 2.4);
@@ -826,20 +838,20 @@ function vsCover(g, W, H, fr) {
   const maxW = center ? W - ins.l - ins.r : W - ins.r - tx;
   g.fillStyle = "#eef0f5";
   g.font = vsFont(800, (vertical ? 72 : 64) * u);
-  g.fillText(vsFit(g, VS.title || S.B.project.title, maxW), tx, ty);
+  if (!VS.bare) g.fillText(vsFit(g, VS.title || S.B.project.title, maxW), tx, ty);
   let y = ty;
   if (VS.artist) {
     g.fillStyle = VS.accent;
     g.font = vsFont(600, (vertical ? 40 : 36) * u);
     y += 58 * u;
-    g.fillText(vsFit(g, VS.artist, maxW), tx, y);
+    if (!VS.bare) g.fillText(vsFit(g, VS.artist, maxW), tx, y);
   }
   const info = vsInfo(beat);
   if (info.sec || info.ch) {
     g.fillStyle = "#9aa0b0";
     g.font = vsFont(600, 28 * u);
     y += 56 * u;
-    g.fillText([info.sec, info.ch].filter(Boolean).join("  ·  "), tx, y);
+    if (!VS.bare) g.fillText([info.sec, info.ch].filter(Boolean).join("  ·  "), tx, y);
   }
   g.textAlign = "left";
   const wd = vsWaveData();
@@ -860,7 +872,7 @@ function vsCover(g, W, H, fr) {
   g.textAlign = "right";
   g.fillText(vsFmtTime((fr.r1 - fr.r0) * P), wx + ww, wy + wh + 40 * u);
   g.textAlign = "left";
-  if (VS.wm) vsWatermark(g, ins.l, H - ins.b - 36 * u, u);
+  if (VS.wm && !VS.bare) vsWatermark(g, ins.l, H - ins.b - 36 * u, u);
   vsLyrics(g, W, H, fr, ins, vertical ? wy + wh + 150 * u : H - ins.b - 130 * u);
 }
 function vsScreen(g, W, H) {
@@ -925,6 +937,10 @@ function vsGuides(g, W, H) {
   g.restore();
 }
 function vsDrawTo(g, W, H, fr) {
+  if (typeof VE !== "undefined" && VE.on && VE.doc && VS.style !== "screen") return veDraw(g, W, H, fr);
+  return vsDrawBase(g, W, H, fr);
+}
+function vsDrawBase(g, W, H, fr) {
   if (VS.style === "notes") vsNotes(g, W, H, fr);
   else if (VS.style === "wave") vsWave(g, W, H, fr);
   else if (VS.style === "cover") vsCover(g, W, H, fr);
@@ -934,6 +950,7 @@ function vsDrawTo(g, W, H, fr) {
 }
 function vsDraw(beat, live, guides) {
   const r = vsRange(), W = VS.canvas.width, H = VS.canvas.height;
+  if (live && VS.busy && typeof VE !== "undefined" && VE.doc) veSyncVideos(veBeatToT(beat), true);
   vsDrawTo(VS.g, W, H, { beat, r0: r[0], r1: r[1], live: !!live, smooth: !!live });
   if (guides) vsGuides(VS.g, W, H);
 }
@@ -974,6 +991,7 @@ function vsLoop() {
     }
     vsDraw(b, S.playing, true);
     vsOverview();
+    if (typeof veTick === "function") veTick(b);
     VS.raf = requestAnimationFrame(step);
   };
   VS.raf = requestAnimationFrame(step);
@@ -1129,13 +1147,11 @@ function vsPanel() {
         <label>До <input type="text" id="vs-t1" value="${vsFmtTime(r[1] * P, true)}" data-hint="Кінець відео: хвилини:секунди"></label><button class="btn ghost sm" data-set="1" data-hint="Кінець — там, де стоїть курсор у редакторі">курсор ⇥</button></div>
       <div class="vs-presets"><button data-pre="all">Уся пісня</button><button data-pre="chorus">Приспів</button><button data-pre="15">15 с</button><button data-pre="30">30 с</button><button data-pre="60">60 с</button></div>
       <div class="muted small" id="vs-dur"></div></div>
-    <div class="vs-sec"><div class="vs-h">Текст</div>
+    <div class="vs-sec"><div class="vs-h">Назва і виконавець</div>
       <input type="text" id="vs-title" maxlength="60" placeholder="Назва треку" value="${escapeHtml(VS.title || "")}">
       <input type="text" id="vs-artist" maxlength="60" placeholder="Ваш нік або ім'я" value="${escapeHtml(VS.artist || "")}">
-      <input type="text" id="vs-cta" maxlength="60" placeholder="Напис у кінці: «Повна версія — у профілі»" value="${escapeHtml(VS.cta || "")}" ${scr ? "hidden" : ""}>
-      <label class="vs-chk" ${scr ? "hidden" : ""}><input type="checkbox" id="vs-intro" ${VS.intro ? "checked" : ""}> Назва на весь екран на початку</label>
-      <label class="vs-chk" ${scr ? "hidden" : ""}><input type="checkbox" id="vs-lyr" ${VS.lyrics ? "checked" : ""}> Текст пісні субтитрами</label>
-      <label class="vs-chk"><input type="checkbox" id="vs-wm" ${VS.wm ? "checked" : ""}> Підпис «Зроблено в INKBEAT»</label></div>
+      <div class="muted small" ${scr ? "hidden" : ""}>Підставляються в текстові шари з полем «Назва» або «Виконавець».</div>
+      <label class="vs-chk" ${scr ? "" : "hidden"}><input type="checkbox" id="vs-wm" ${VS.wm ? "checked" : ""}> Підпис «Зроблено в INKBEAT»</label></div>
     <div class="vs-sec" ${scr ? "hidden" : ""}><div class="vs-h">Оформлення</div>
       <div class="vs-row"><span class="muted small">Колір</span><div class="vs-sws">${sw}</div></div>
       <div class="vs-row"><span class="muted small">Фон</span><div class="np-seg"><button type="button" data-bg="dark" class="${VS.bg === "dark" ? "on" : ""}">Темний</button><button type="button" data-bg="accent" class="${VS.bg === "accent" ? "on" : ""}">Кольоровий</button><button type="button" data-bg="cover" class="${VS.bg === "cover" ? "on" : ""}">З обкладинки</button></div></div>
@@ -1374,7 +1390,9 @@ async function vsEncodeOffline(fmtKey, r, label) {
   const t0 = performance.now();
   for (let f = 0; f < total; f++) {
     if (VS.stop || err) break;
-    vsDrawTo(g, w, h, { beat: r[0] + f / fps / P, r0: r[0], r1: r[1], live: false, smooth: true });
+    const fb = r[0] + f / fps / P;
+    if (typeof VE !== "undefined" && VE.on && VE.doc) { VE.encFmt = fmtKey; await vePrepare(fb); }
+    vsDrawTo(g, w, h, { beat: fb, r0: r[0], r1: r[1], live: false, smooth: true });
     const vf = new VideoFrame(cv, { timestamp: Math.round(f * 1e6 / fps), duration: Math.round(1e6 / fps) });
     enc.encode(vf, { keyFrame: f % (fps * 2) === 0 });
     vf.close();
@@ -1385,6 +1403,7 @@ async function vsEncodeOffline(fmtKey, r, label) {
       await new Promise((res) => setTimeout(res, 0));
     }
   }
+  if (typeof VE !== "undefined") VE.encFmt = null;
   await enc.flush().catch((e) => { err = err || e; });
   enc.close();
   VS.bgCache = null;
@@ -1436,6 +1455,7 @@ async function vsRecord() {
   try {
     await loadInstrumentBuffers();
     if (VS.lyrics) vsPhrases();
+    if (typeof VE !== "undefined" && VE.on && VE.doc) await veMediaReady();
     await vsMixNow();
     if (vsOfflineOk() && await vsEncoderConfig(...vsSize(fmts[0]), VS.fps)) {
       const au = await vsAudio(r);

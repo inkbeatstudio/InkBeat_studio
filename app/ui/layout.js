@@ -392,7 +392,9 @@ const PICK_ACCEPT = {
   audio: "audio/*,.wav,.mp3,.flac,.ogg,.m4a,.aif,.aiff,.opus",
   image: "image/*,.jpg,.jpeg,.png,.webp",
   zip: ".zip",
-  inkbeat: ".inkbeat,.zip"
+  inkbeat: ".inkbeat,.zip",
+  media: "image/*,video/*,.jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.mov,.m4v",
+  font: ".ttf,.otf,.woff,.woff2"
 };
 function pickByInput(kind, multiple) {
   return new Promise((res) => {

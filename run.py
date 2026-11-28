@@ -172,6 +172,8 @@ class DesktopApi:
         types = {
             "audio": ("Аудіо (*.wav;*.mp3;*.flac;*.ogg;*.m4a;*.aif;*.aiff;*.opus)", "Усі файли (*.*)"),
             "image": ("Зображення (*.jpg;*.jpeg;*.png;*.webp)", "Усі файли (*.*)"),
+            "media": ("Зображення і відео (*.jpg;*.jpeg;*.png;*.webp;*.gif;*.mp4;*.webm;*.mov;*.m4v)", "Усі файли (*.*)"),
+            "font": ("Шрифти (*.ttf;*.otf;*.woff;*.woff2)", "Усі файли (*.*)"),
             "zip": ("Архів (*.zip)", "Усі файли (*.*)"),
             "inkbeat": ("Архів InkBeat (*.inkbeat;*.zip)", "Усі файли (*.*)"),
             "soundfont": ("SoundFont / SFZ (*.sf2;*.sfz;*.zip)", "Усі файли (*.*)"),

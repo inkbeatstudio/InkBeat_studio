@@ -48,6 +48,7 @@ if (I18N.on) {
   document.documentElement.lang = "en";
   const ATTRS = ["title", "placeholder", "data-hint", "aria-label", "alt"];
   const doText = (n) => {
+    if (n.parentElement && n.parentElement.closest("[data-notr]")) return;
     const v = n.data;
     if (v && CYR.test(v)) {
       const t = tr(v);
@@ -64,11 +65,12 @@ if (I18N.on) {
   const walk = (root) => {
     if (root.nodeType === 3) return doText(root);
     if (root.nodeType !== 1) return;
-    if (root.tagName === "SCRIPT" || root.tagName === "STYLE" || root.isContentEditable) return;
+    if (root.tagName === "SCRIPT" || root.tagName === "STYLE" || root.isContentEditable || root.hasAttribute("data-notr")) return;
     doEl(root);
     const tw = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
       acceptNode: (n) => {
         if (n.nodeType !== 1) return NodeFilter.FILTER_ACCEPT;
+        if (n.hasAttribute("data-notr")) return NodeFilter.FILTER_REJECT;
         if (n.tagName === "TEXTAREA") { doEl(n); return NodeFilter.FILTER_REJECT; }
         return n.tagName === "SCRIPT" || n.tagName === "STYLE" ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
       }
@@ -98,9 +100,9 @@ if (I18N.on) {
   else start();
   const C2 = CanvasRenderingContext2D.prototype;
   const fT = C2.fillText, sT = C2.strokeText, mT = C2.measureText;
-  C2.fillText = function (t, ...a) { return fT.call(this, tr(String(t)), ...a); };
-  C2.strokeText = function (t, ...a) { return sT.call(this, tr(String(t)), ...a); };
-  C2.measureText = function (t) { return mT.call(this, tr(String(t))); };
+  C2.fillText = function (t, ...a) { return fT.call(this, I18N.raw ? String(t) : tr(String(t)), ...a); };
+  C2.strokeText = function (t, ...a) { return sT.call(this, I18N.raw ? String(t) : tr(String(t)), ...a); };
+  C2.measureText = function (t) { return mT.call(this, I18N.raw ? String(t) : tr(String(t))); };
   const pr = window.prompt, cf = window.confirm, al = window.alert;
   window.prompt = (m, d) => pr.call(window, tr(m), typeof d === "string" && I18N_EN[d] ? I18N_EN[d] : d);
   window.confirm = (m) => cf.call(window, tr(m));

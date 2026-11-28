@@ -119,3 +119,47 @@ def save_cover(pid: str, src: Path) -> dict:
     im = im.resize((1200, 1200), Image.LANCZOS)
     im.save(cover_path(pid), "JPEG", quality=92)
     return {"ok": True}
+
+
+MEDIA_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".mp4", ".webm", ".mov", ".m4v", ".ttf", ".otf", ".woff", ".woff2"}
+
+
+def media_dir(pid: str) -> Path:
+    d = P.workspace() / pid / "video_media"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def edit_path(pid: str) -> Path:
+    return P.workspace() / pid / "video_edit.json"
+
+
+def load_edit(pid: str) -> dict:
+    f = edit_path(pid)
+    if not f.exists():
+        return {}
+    try:
+        import json
+        return json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def save_edit(pid: str, doc: dict) -> None:
+    import json
+    f = edit_path(pid)
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(f)
+
+
+def save_media(pid: str, src: Path, name: str) -> dict:
+    import hashlib
+    ext = Path(name).suffix.lower()
+    if ext not in MEDIA_EXT:
+        raise ValueError("Цей тип файлу не підтримується. Підійдуть зображення, відео або шрифти.")
+    h = hashlib.md5(src.read_bytes()).hexdigest()[:12]
+    out = media_dir(pid) / (h + ext)
+    if not out.exists():
+        shutil.copyfile(src, out)
+    return {"name": out.name, "orig": Path(name).name, "size": out.stat().st_size}

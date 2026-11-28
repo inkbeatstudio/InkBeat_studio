@@ -1525,6 +1525,41 @@ def project_cover_del(pid):
     return jsonify({"ok": True})
 
 
+@app.get("/api/project/<pid>/video/edit")
+def project_video_edit_get(pid):
+    return jsonify(VID.load_edit(Path(_pdir(pid)).name))
+
+
+@app.post("/api/project/<pid>/video/edit")
+def project_video_edit_save(pid):
+    doc = request.get_json(silent=True)
+    if not isinstance(doc, dict):
+        raise ValueError("Некоректні дані відео")
+    VID.save_edit(Path(_pdir(pid)).name, doc)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/project/<pid>/video/media")
+def project_video_media_upload(pid):
+    d = _pdir(pid)
+    f = request.files["file"]
+    tmp = d / "cache" / ("vm-" + uuid.uuid4().hex[:8])
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+    f.save(tmp)
+    try:
+        return jsonify(VID.save_media(Path(d).name, tmp, f.filename or "file"))
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+@app.get("/api/project/<pid>/video/media/<name>")
+def project_video_media_get(pid, name):
+    f = VID.media_dir(Path(_pdir(pid)).name) / Path(name).name
+    if not f.exists():
+        abort(404)
+    return send_file(f, max_age=3600)
+
+
 @app.get("/api/project/<pid>/video/file/<name>")
 def project_video_file(pid, name):
     f = VID.out_dir(Path(_pdir(pid)).name) / Path(name).name
@@ -1547,7 +1582,7 @@ def video_support():
 @app.get("/api/localfile")
 def local_file():
     pth = Path(request.args.get("path", ""))
-    ok = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aif", ".aiff", ".opus", ".jpg", ".jpeg", ".png", ".webp", ".zip"}
+    ok = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aif", ".aiff", ".opus", ".jpg", ".jpeg", ".png", ".webp", ".zip", ".gif", ".mp4", ".webm", ".mov", ".m4v", ".ttf", ".otf", ".woff", ".woff2"}
     if request.remote_addr not in ("127.0.0.1", "::1") or pth.suffix.lower() not in ok or not pth.is_file():
         abort(404)
     return send_file(pth, conditional=True)

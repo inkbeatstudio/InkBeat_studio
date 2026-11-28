@@ -58,6 +58,14 @@ notices to be distributed together with the program.
    VSCO 2 Community Edition — Versilian Studios, CC0
    Sonic Pi samples — freesound.org contributors and Arovane (Uwe Zahn), CC0
 
+7. Fonts for the video studio (SIL Open Font License 1.1)
+   Files: app/ui/fonts/*.woff2 and app/ui/fonts/*.ttf. Copyright lines and the
+   full licence text: app/ui/fonts/OFL.txt.
+   Inter, Montserrat, Manrope, Rubik, Oswald, Unbounded, Exo 2, Rubik Mono One,
+   Pacifico, Caveat, Neucha — subset to Latin and Cyrillic, converted to WOFF2.
+   Russo One, Comfortaa, Playfair Display, Lobster, Marck Script, Press Start 2P
+   — original unmodified files (their licences reserve the font names).
+
 -------------------------------------------------------------------------------
 Apache License 2.0 and NOTICE for Basic Pitch:
 -------------------------------------------------------------------------------
