@@ -45,3 +45,39 @@ jobs:
             dist/InkBeat-Setup-Windows.exe dist/InkBeat-Setup-Linux.run dist/InkBeat-macOS.zip
         env:
           GH_TOKEN: ${{ github.token }}
+
+  windows-full:
+    needs: release
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        id: v
+        shell: bash
+        run: |
+          VER=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' app/engine/project.py | head -n 1)
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VER" --json assets -q '.assets[].name' 2>/dev/null | grep -q "InkBeat-Setup-Windows-Full.exe"; then echo "has=1" >> "$GITHUB_OUTPUT"; else echo "has=0" >> "$GITHUB_OUTPUT"; fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: NSIS
+        if: steps.v.outputs.has == '0'
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build
+        if: steps.v.outputs.has == '0'
+        shell: bash
+        run: OUT="$PWD/dist" bash tools/build_windows_full.sh
+
+      - name: Upload
+        if: steps.v.outputs.has == '0'
+        shell: bash
+        run: gh release upload "v${{ steps.v.outputs.ver }}" dist/InkBeat-Setup-Windows-Full.exe --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}

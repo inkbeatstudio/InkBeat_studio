@@ -219,7 +219,48 @@ def beatbox_notes(y: np.ndarray, sr: int, sensitivity: float = 0.5, progress=Non
     return out
 
 
-def slice_audio(y: np.ndarray, sr: int, out_dir, rel_base: str, sensitivity: float = 0.5, max_slices: int = 32, progress=None):
+def detect_onsets(y: np.ndarray, sr: int) -> dict:
+    import librosa
+
+    mono = np.atleast_2d(y).mean(axis=0)
+    hop = 256
+    env = librosa.onset.onset_strength(y=mono, sr=sr, hop_length=hop)
+    on = librosa.onset.onset_detect(onset_envelope=env, sr=sr, hop_length=hop, backtrack=True, delta=0.02, units="samples")
+    mx = float(env.max()) if env.size else 1.0
+    pts = []
+    for s in on:
+        k = min(len(env) - 1, int(s) // hop + 2)
+        pts.append([round(int(s) / sr, 5), round(float(env[max(0, k - 2):k + 3].max()) / (mx or 1), 4)])
+    dur = mono.shape[0] / sr
+    bpm = None
+    try:
+        est = float(estimate_bpm(np.atleast_2d(y), sr))
+        best = None
+        for beats in (2, 4, 8, 16, 32):
+            for mul in (0.5, 1, 2):
+                c = beats * 60 / dur * mul
+                if 60 <= c <= 190:
+                    err = abs(c - est) / est
+                    if best is None or err < best[0]:
+                        best = (err, c)
+        bpm = round(best[1], 2) if best and best[0] < 0.08 else round(est, 2)
+    except Exception:
+        pass
+    return {"onsets": pts, "duration": round(dur, 5), "bpm": bpm}
+
+
+def _zero_cross(mono: np.ndarray, s: int, win: int) -> int:
+    a, b = max(1, s - win), min(len(mono) - 1, s + win)
+    if b <= a:
+        return s
+    seg = mono[a:b]
+    zc = np.nonzero(np.diff(np.signbit(seg)))[0]
+    if not len(zc):
+        return s
+    return int(a + zc[np.argmin(np.abs(zc + a - s))])
+
+
+def slice_audio(y: np.ndarray, sr: int, out_dir, rel_base: str, sensitivity: float = 0.5, max_slices: int = 32, progress=None, cuts=None):
     import librosa
     import soundfile as sf
     from pathlib import Path
@@ -228,6 +269,28 @@ def slice_audio(y: np.ndarray, sr: int, out_dir, rel_base: str, sensitivity: flo
     out_dir.mkdir(parents=True, exist_ok=True)
     y = np.atleast_2d(y)
     mono = y.mean(axis=0)
+    if cuts is not None:
+        pts = sorted({_zero_cross(mono, int(float(c) * sr), int(0.002 * sr)) for c in cuts if 0 <= float(c) * sr < y.shape[1]})
+        if not pts or pts[0] > int(0.01 * sr):
+            pts = [0] + pts
+        bounds = pts + [y.shape[1]]
+        slices = []
+        fade = int(0.003 * sr)
+        for i in range(len(pts)):
+            a, b = bounds[i], bounds[i + 1]
+            if b - a < int(0.01 * sr):
+                continue
+            seg = y[:, a:b].copy()
+            f = min(fade, seg.shape[1] // 4)
+            if f > 0:
+                seg[:, -f:] *= np.linspace(1, 0, f, dtype=np.float32)
+                seg[:, :max(1, f // 3)] *= np.linspace(0, 1, max(1, f // 3), dtype=np.float32)
+            fn = out_dir / f"s{i:02d}.wav"
+            sf.write(str(fn), seg.T, sr, subtype="PCM_16")
+            slices.append({"file": f"{rel_base}/{fn.name}", "start": a / sr, "dur": (b - a) / sr})
+            if progress:
+                progress((i + 1) / len(pts))
+        return slices
     hop = 256
     env = librosa.onset.onset_strength(y=mono, sr=sr, hop_length=hop)
     delta = float(np.interp(sensitivity, [0, 1], [0.3, 0.03]))

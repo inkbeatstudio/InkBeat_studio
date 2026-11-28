@@ -211,3 +211,27 @@ renderInstTab = function(el, T) {
   const tools = MENUS["Інструменти"];
   MENUS["Інструменти"] = () => tools().concat([null, ["VST-плагіни…", openVstManager]]);
 })();
+const VST_FREE = [
+  ["Vital", "Синтезатор з хвильовими таблицями: сучасні баси, ліди й пади", "https://vital.audio"],
+  ["Surge XT", "Гібридний синтезатор з тисячами пресетів і власними ефектами", "https://surge-synthesizer.github.io"],
+  ["TAL-NoiseMaker", "Аналоговий синт у стилі 80-х: прості, теплі звуки", "https://tal-software.com/products/tal-noisemaker"],
+  ["Dexed", "FM-синтезатор у стилі Yamaha DX7: електропіаніно, дзвони, баси", "https://asb2m10.github.io/dexed/"],
+  ["OB-Xd", "Віртуальний аналоговий синт у стилі Oberheim", "https://www.discodsp.com/obxd/"],
+  ["Odin 2", "Напівмодульний синтезатор з великою бібліотекою пресетів", "https://thewavewarden.com/odin2"],
+];
+const _openVstManagerF = openVstManager;
+openVstManager = async function() {
+  await _openVstManagerF();
+  const box = $("#vst-body");
+  if (!box || $("#vst-free", box)) return;
+  const have = (n) => VSTS.list.some((p) => !p.error && (p.name || "").toLowerCase().replace(/[^a-z0-9]/g, "").includes(n.toLowerCase().replace(/[^a-z0-9]/g, "")));
+  const j = await api.get("/api/vst").catch(() => ({}));
+  const d = document.createElement("div");
+  d.id = "vst-free";
+  d.className = "vst-free";
+  d.innerHTML = `${j.vst2 ? `<p class="warn small">${tr("Знайдено")} ${j.vst2} ${tr("файлів старого формату VST2. InkBeat працює з VST3 — більшість виробників дають безкоштовно й VST3-версію: перевстановіть плагін і поставте галочку VST3.")}</p>` : ""}
+    <h4 class="br-cat">${tr("Популярні безкоштовні синтезатори у форматі VST3")}</h4>
+    <div class="vst-free-list">${VST_FREE.map(([n, dsc, url]) => `<div class="lib-row"><b>${escapeHtml(n)}</b><span class="muted small">${escapeHtml(tr(dsc))}</span><span class="spacer"></span>${have(n) ? `<span class="ok small">${tr("встановлено")}</span>` : `<a class="btn ghost sm" href="${url}" target="_blank" rel="noopener" data-hint="${escapeHtml(tr("Відкрити офіційний сайт. Після встановлення натисніть «Знайти плагіни»"))}">${tr("Завантажити")}</a>`}</div>`).join("")}</div>
+    <p class="muted small">${tr("Порада: під час встановлення залишайте стандартну папку VST3 — тоді InkBeat знайде плагін сам. Якщо плагін зависає чи падає, програма продовжить працювати: кожен плагін запускається окремо.")}</p>`;
+  box.appendChild(d);
+};

@@ -57,6 +57,15 @@ def _worker():
 
 def _friendly(e: Exception) -> str:
     s = str(e)
+    if not isinstance(e, (ValueError, FileNotFoundError, PermissionError)) and "Скасовано" not in s:
+        try:
+            from .engine import reports as RP
+
+            from flask import has_request_context
+
+            RP.record_exception(e, request.path if has_request_context() else "background")
+        except Exception:
+            pass
     if "urlopen" in s or "HTTP Error" in s or "getaddrinfo" in s or "ConnectionError" in s:
         return ("Не вдалося завантажити модуль розділення. Перший запуск потребує інтернету "
                 "(модуль завантажується один раз). Перевірте з'єднання і спробуйте ще раз.")
@@ -70,6 +79,73 @@ def _friendly(e: Exception) -> str:
 threading.Thread(target=_worker, daemon=True).start()
 
 
+@app.errorhandler(Exception)
+def _unhandled(e):
+    from werkzeug.exceptions import HTTPException
+
+    if isinstance(e, HTTPException):
+        return e
+    try:
+        from .engine import reports as RP
+
+        RP.record_exception(e, request.path)
+    except Exception:
+        pass
+    return jsonify({"error": str(e) or e.__class__.__name__}), 500
+
+
+@app.get("/api/reports")
+def reports_list():
+    from .engine import reports as RP
+
+    return jsonify({"items": RP.items()[:50], "report_url": bool(RP.report_url())})
+
+
+@app.post("/api/reports/log")
+def reports_log():
+    from .engine import reports as RP
+
+    d = request.get_json(silent=True) or {}
+    return jsonify(RP.record("ui", str(d.get("message", ""))[:600], str(d.get("stack", ""))[:6000], d.get("context") or {}))
+
+
+@app.post("/api/reports/send")
+def reports_send():
+    from .engine import reports as RP
+
+    d = request.get_json(silent=True) or {}
+    return jsonify(RP.send(d.get("ids") or [], str(d.get("note") or "")))
+
+
+@app.post("/api/reports/preview")
+def reports_preview():
+    from .engine import reports as RP
+
+    d = request.get_json(silent=True) or {}
+    return jsonify(RP.compose(d.get("ids") or [], str(d.get("note") or "")))
+
+
+@app.post("/api/reports/clear")
+def reports_clear():
+    from .engine import reports as RP
+
+    return jsonify(RP.clear())
+
+
+@app.get("/api/settings")
+def settings_get():
+    from .engine import reports as RP
+
+    return jsonify(RP.settings())
+
+
+@app.post("/api/settings")
+def settings_set():
+    from .engine import reports as RP
+
+    return jsonify(RP.save_settings(request.get_json(silent=True) or {}))
+
+
 @app.get("/")
 def index():
     return send_from_directory(UI_DIR, "index.html")
@@ -78,6 +154,91 @@ def index():
 @app.get("/ui/<path:name>")
 def ui_file(name):
     return send_from_directory(UI_DIR, name)
+
+
+def _dir_size(p: Path) -> int:
+    n = 0
+    try:
+        for f in p.rglob("*"):
+            try:
+                if f.is_file():
+                    n += f.stat().st_size
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return n
+
+
+def _storage_dirs() -> dict:
+    ws = P.workspace()
+    home = Path(os.environ.get("TORCH_HOME") or (Path.home() / ".cache" / "torch"))
+    return {"uploads": ws / "_uploads", "soundbank": ws / "_library" / "soundbank", "packs": ws / "_library" / "packs",
+            "library": ws / "_library", "models": home, "workspace": ws, "config": Path.home() / ".inkbeat"}
+
+
+@app.get("/api/storage")
+def storage_info():
+    d = _storage_dirs()
+    ws = d["workspace"]
+    projects = [x for x in ws.iterdir() if x.is_dir() and not x.name.startswith("_")] if ws.exists() else []
+    lib = _dir_size(d["library"])
+    sb, pk = _dir_size(d["soundbank"]), _dir_size(d["packs"])
+    return jsonify({"workspace": str(ws), "projects": {"count": len(projects), "bytes": sum(_dir_size(x) for x in projects)},
+                    "uploads": _dir_size(d["uploads"]), "soundbank": sb, "packs": pk, "library": max(0, lib - sb - pk),
+                    "models": _dir_size(d["models"]), "busy": any(j.status in ("queued", "running") for j in JOBS.values())})
+
+
+@app.post("/api/storage/clean")
+def storage_clean():
+    what = (request.get_json(silent=True) or {}).get("what")
+    d = _storage_dirs()
+    if what != "uploads":
+        raise ValueError("Невідома дія")
+    if any(j.status in ("queued", "running") for j in JOBS.values()):
+        raise ValueError("Зараз триває обробка. Дочекайтеся її завершення і спробуйте ще раз.")
+    freed = 0
+    up = d["uploads"]
+    if up.exists():
+        cut = time.time() - 600
+        for x in up.iterdir():
+            try:
+                if x.stat().st_mtime < cut:
+                    n = _dir_size(x) if x.is_dir() else x.stat().st_size
+                    if x.is_dir():
+                        shutil.rmtree(x, ignore_errors=True)
+                    else:
+                        x.unlink()
+                    freed += n
+            except OSError:
+                pass
+    return jsonify({"ok": True, "freed": freed})
+
+
+@app.post("/api/storage/open")
+def storage_open():
+    what = (request.get_json(silent=True) or {}).get("what", "workspace")
+    d = _storage_dirs()
+    if what not in d:
+        raise ValueError("Невідома папка")
+    d[what].mkdir(parents=True, exist_ok=True)
+    _open_folder(d[what])
+    return jsonify({"ok": True, "path": str(d[what])})
+
+
+@app.get("/api/modules/separation")
+def modules_separation():
+    from .engine import modules as MD
+
+    return jsonify(MD.status())
+
+
+@app.post("/api/modules/separation/install")
+def modules_separation_install():
+    from .engine import modules as MD
+
+    data = request.get_json(silent=True) or {}
+    return jsonify(MD.start(data.get("gpu")))
 
 
 @app.get("/api/system")
@@ -394,6 +555,43 @@ def soundfont_preset(pid, lid):
         return jsonify({"error": _friendly(e)}), 400
 
 
+def _slice_src_path(d: Path, data: dict) -> Path:
+    spec = str(data.get("spec") or "")
+    if spec.startswith("sb:"):
+        from .engine import soundbank as SBK
+
+        f = SBK.path(spec)
+    elif spec.startswith("lib:"):
+        f = X.sample_path(spec)
+    elif spec.startswith("pack:"):
+        from .engine import content as CT
+
+        f = CT.file_path(spec)
+    else:
+        src = data.get("source")
+        f = PR.Versions(d).path(src) if src else d / "stems" / f"{Path(str(data.get('base') or '')).name}.wav"
+    if not f or not Path(f).exists():
+        raise FileNotFoundError("Звук для нарізки не знайдено.")
+    return Path(f)
+
+
+@app.post("/api/project/<pid>/slice/detect")
+def project_slice_detect(pid):
+    from .engine import creative as CR
+    from .engine.project import load_audio
+
+    d = _pdir(pid)
+    data = request.get_json(force=True) or {}
+    try:
+        y, sr = load_audio(_slice_src_path(d, data))
+        a = max(0.0, float(data.get("from") or 0))
+        b = float(data.get("to") or y.shape[1] / sr)
+        y = y[:, int(a * sr): int(b * sr)]
+        return jsonify(CR.detect_onsets(y, sr))
+    except Exception as e:
+        return jsonify({"error": _friendly(e)}), 400
+
+
 @app.post("/api/project/<pid>/slice")
 def project_slice(pid):
     d = _pdir(pid)
@@ -408,8 +606,7 @@ def project_slice(pid):
             from .engine.project import load_audio
             from .engine.soundfont import lib_dir
 
-            src = data.get("source")
-            path = PR.Versions(d).path(src) if src else d / "stems" / f"{Path(data['base']).name}.wav"
+            path = _slice_src_path(d, data)
             y, sr = load_audio(path)
             a = max(0.0, float(data.get("from") or 0))
             b = float(data.get("to") or y.shape[1] / sr)
@@ -417,7 +614,7 @@ def project_slice(pid):
             sid = "slice" + uuid.uuid4().hex[:6]
             out = lib_dir(d) / sid
             sl = CR.slice_audio(y, sr, out, f"_instruments/{sid}", float(data.get("sensitivity", 0.5)), int(data.get("max", 32)),
-                                lambda f: job.__setitem__("progress", float(f)))
+                                lambda f: job.__setitem__("progress", float(f)), cuts=data.get("cuts"))
             for s_ in sl:
                 s_["start"] += a
             job["result"] = {"slices": sl}
@@ -527,8 +724,7 @@ def project_to_notes(pid):
             from .engine import creative as CR
             from .engine.project import load_audio
 
-            src = data.get("source")
-            path = PR.Versions(d).path(src) if src else d / "stems" / f"{Path(data['base']).name}.wav"
+            path = _slice_src_path(d, data)
             y, sr = load_audio(path)
             a, b = data.get("from"), data.get("to")
             off = 0.0
@@ -760,6 +956,38 @@ def soundbank_sonicpi_remove():
     from .engine import soundbank as SBK
 
     return jsonify(SBK.remove_sonicpi())
+
+
+@app.post("/api/soundbank/import")
+def soundbank_import():
+    from .engine import soundbank as SBK
+
+    if request.files:
+        up = P.workspace() / "_uploads" / ("smp" + uuid.uuid4().hex[:8])
+        files = []
+        for f in request.files.getlist("files"):
+            rel = Path((f.filename or "sample.wav").replace("\\", "/"))
+            parts = [x for x in rel.parts if x not in ("", ".", "..")]
+            if not parts or Path(parts[-1]).suffix.lower() not in SBK.AUDIO_EXT:
+                continue
+            dest = up / Path(*parts)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            f.save(dest)
+            files.append((str(dest), " ".join(parts[:-1])))
+    else:
+        data = request.get_json(silent=True) or {}
+        files = SBK.collect([str(p) for p in (data.get("paths") or [])])
+    if not files:
+        return jsonify({"error": "У вибраному місці немає аудіофайлів (WAV, MP3, FLAC, OGG, AIFF, M4A)."}), 400
+    return _sbk_job(lambda job: job.__setitem__("result", SBK.import_files(files, lambda x: job.__setitem__("progress", float(x)), lambda: job.get("cancel"))))
+
+
+@app.post("/api/soundbank/user/remove")
+def soundbank_user_remove():
+    from .engine import soundbank as SBK
+
+    d = request.get_json(silent=True) or {}
+    return jsonify(SBK.user_remove(d.get("id") or None))
 
 
 @app.get("/api/soundbank/file")

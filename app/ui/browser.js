@@ -140,7 +140,7 @@ async function sbxNewTrack(item) {
 function sbxRow(x, favs) {
   const dis = x.kind === "pack" && !x.installed;
   const act = SBR.mode === "new" ? `<button class="btn primary sm" data-new data-hint="Створити нову MIDI-доріжку з цим звуком">＋ Доріжка</button>` : `<button class="btn ghost sm sb2-use" data-use data-hint="Поставити цей звук на вибрану доріжку">На доріжку</button><button class="btn ghost sm" data-new data-hint="Створити нову MIDI-доріжку з цим звуком">＋</button>`;
-  return `<div class="sb2-row${dis ? " dis" : ""}" data-id="${escapeHtml(x.id)}">
+  return `<div class="sb2-row${dis ? " dis" : ""}" data-id="${escapeHtml(x.id)}" draggable="${dis ? "false" : "true"}" data-hint="${escapeHtml(tr("Перетягніть на доріжку, щоб поставити цей звук, або на порожнє місце під доріжками — для нової доріжки"))}">
     <button class="sb2-fav${favs.has(x.id) ? " on" : ""}" data-fav data-hint="Додати в обране або прибрати з нього">★</button>
     <button class="sb2-play" data-play data-hint="Послухати">${dis ? "⤓" : "▶"}</button>
     <div class="sb2-name"><b>${escapeHtml(x.name)}</b><span class="muted small">${escapeHtml(x.sub || "")}${x.kind === "pack" ? ` · ${escapeHtml(x.license)}` : ""}${dis ? ` · ${tr("не встановлено")}, ${sbxMB(x.size)}` : ""}</span></div>
@@ -386,14 +386,15 @@ function smpPlay(url) {
   SMP.audio = new Audio(url);
   SMP.audio.play().catch(() => {});
 }
-async function smpAddTrack(s, btn) {
+async function smpAddTrack(s, btn, atBeat) {
   if (btn) { btn.disabled = true; btn.textContent = "…"; }
   try {
     const fitted = s.kind === "loop" || s.kind === "note";
     const blob = await (await fetch(smpUrl(s, fitted))).blob();
     const fd = new FormData();
     fd.append("file", blob, s.name + ".wav");
-    fd.append("start", String(Math.max(0, S.playBeat * period() - S.B.timing.pad)));
+    const at = atBeat != null ? atBeat : S.playBeat;
+    fd.append("start", String(Math.max(0, at * period() - S.B.timing.pad)));
     fd.append("name", s.name);
     fd.append("kind", /ударн|бочк|мал|хет|перкус|брейк|ритм/i.test(s.cat) ? "drums" : "other");
     fd.append("transcribe", "0");
@@ -404,7 +405,7 @@ async function smpAddTrack(s, btn) {
     await careWait(j.job, () => {});
     await reloadProject();
     sbxRecent("smp:" + s.id);
-    toast(`«${s.name}» ${tr("додано з такту")} ${hmBarAt(S.playBeat)}.`);
+    toast(`«${s.name}» ${tr("додано з такту")} ${hmBarAt(at)}.`);
   } catch (e) {
     toast(tr("Не вдалося") + ": " + e.message, true);
   }
@@ -446,31 +447,204 @@ function smpRender(body) {
   let list = SMP.items;
   if (q) { const terms = sbxTerms(q); list = list.filter((s) => terms.some((w) => (s.name + " " + s.cat + " " + tr(s.cat) + " " + (s.tags || "")).toLowerCase().includes(w))); }
   const favList = list.filter((s) => favs.has("smp:" + s.id));
-  const cats = (favList.length ? [["★", favList.length]] : []).concat(sbxCats(list));
-  const shown = SMP.cat === "★" ? favList : SMP.cat ? list.filter((s) => s.cat === SMP.cat) : list;
+  const mine = list.filter((s) => s.pack === "user");
+  const MINE = "📁 " + tr("Мої семпли");
+  const cats = (favList.length ? [["★", favList.length]] : []).concat(mine.length ? [[MINE, mine.length]] : [], sbxCats(list));
+  const shown = SMP.cat === "★" ? favList : SMP.cat === MINE ? mine : SMP.cat ? list.filter((s) => s.cat === SMP.cat) : list;
   const t = findT(SBR.tid || S.sel), drumsSel = t && mt(t.id).inst && (mt(t.id).inst.type === "drums" || t.is_drums);
-  body.innerHTML = `<div class="sb2-main"><div class="sb2-cats"><button data-cat="" class="${SMP.cat ? "" : "active"}">${tr("Усі категорії")} <span>${list.length}</span></button>${cats.map(([c, n]) => `<button data-cat="${escapeHtml(c)}" class="${SMP.cat === c ? "active" : ""}">${escapeHtml(c)} <span>${n}</span></button>`).join("")}
+  body.innerHTML = `<div class="sb2-main"><div class="sb2-cats"><button class="btn ghost sm smp-imp" id="smp-imp" data-hint="Додати свої семпли: виберіть папку — програма сама розкладе звуки за категоріями, знайде темп і тональність лупів">＋ ${tr("Імпорт папки…")}</button><div class="muted small" id="smp-imp-st"></div><button data-cat="" class="${SMP.cat ? "" : "active"}">${tr("Усі категорії")} <span>${list.length}</span></button>${cats.map(([c, n]) => `<button data-cat="${escapeHtml(c)}" class="${SMP.cat === c ? "active" : ""}">${escapeHtml(c)} <span>${n}</span></button>`).join("")}
       ${SMP.sonicpi ? "" : `<p class="muted small sb2-hintbox">${tr("Більше справжніх записаних семплів — «Семпли Sonic Pi» у «Магазині пакетів».")}</p>`}</div>
     <div class="sb2-list">${shown.slice(0, 400).map((s) => {
       const loopish = s.kind === "loop" || s.kind === "note", pad = SMP_PAD[s.cat] && s.kind !== "loop";
-      return `<div class="sb2-row" data-sid="${escapeHtml(s.id)}"><button class="sb2-fav${favs.has("smp:" + s.id) ? " on" : ""}" data-fav data-hint="Додати в обране або прибрати з нього">★</button>
+      return `<div class="sb2-row" data-sid="${escapeHtml(s.id)}" draggable="true" data-hint="${escapeHtml(tr("Перетягніть на таймлайн — звук стане з того місця, куди відпустите; на пад ударних — стане цим ударом"))}"><button class="sb2-fav${favs.has("smp:" + s.id) ? " on" : ""}" data-fav data-hint="Додати в обране або прибрати з нього">★</button>
         <button class="sb2-play" data-pl="0" data-hint="Послухати як є">▶</button>${loopish ? `<button class="sb2-play sb2-fit" data-pl="1" data-hint="Послухати в темпі й тональності проєкту">▶♪</button>` : ""}
         <div class="sb2-name"><b>${escapeHtml(s.name)}</b><span class="muted small">${escapeHtml(smpInfo(s))}</span></div><span class="sb2-tag">${escapeHtml(s.cat)}</span>
         ${pad && drumsSel ? `<button class="btn ghost sm" data-pad data-hint="Поставити цей звук на відповідний пад ударних вибраної доріжки">${tr("На пад")}</button>` : ""}
+        ${s.kind === "loop" ? `<button class="btn ghost sm" data-slice data-hint="Нарізати луп на удари: кожен удар стане окремою клавішею, ритм можна переставляти й грати в будь-якому темпі">${tr("Нарізати")}</button>` : ""}
         ${s.kind !== "loop" ? `<button class="btn ghost sm" data-smp data-hint="Нова доріжка-семплер: цей звук грає нотами">${tr("Семплер")}</button>` : ""}
+        ${s.pack === "user" ? `<button class="sb2-fav" data-rm data-hint="Прибрати з бібліотеки">✕</button>` : ""}
         <button class="btn ghost sm sb2-use" data-add data-hint="Вставити звук аудіодоріжкою з позиції курсору; лупи підганяються під темп і тональність проєкту">${tr("＋ Доріжка")}</button></div>`;
     }).join("") || `<div class="dock-empty">${tr("Нічого не знайдено. Спробуйте інше слово.")}</div>`}</div></div>`;
   $$("[data-cat]", body).forEach((b) => b.onclick = () => { SMP.cat = b.dataset.cat; sbxRender(); });
+  $("#smp-imp", body).onclick = () => smpImport();
   $$(".sb2-row", body).forEach((r) => {
     const s = SMP.items.find((x) => x.id === r.dataset.sid);
+    const rm = s && $("[data-rm]", r);
+    if (rm) rm.onclick = async () => { await api.post("/api/soundbank/user/remove", { id: s.id }); await smpLoad(true); sbxRender(); };
     if (!s) return;
     $$("[data-pl]", r).forEach((b) => b.onclick = () => smpPlay(smpUrl(s, b.dataset.pl === "1")));
     const fav = $("[data-fav]", r);
     fav.onclick = () => { const f = sbxFavs(), k = "smp:" + s.id; f.has(k) ? f.delete(k) : f.add(k); UIP.favSounds = [...f]; saveUI(); fav.classList.toggle("on", f.has(k)); };
-    const add = $("[data-add]", r), smp = $("[data-smp]", r), pad = $("[data-pad]", r);
+    const add = $("[data-add]", r), smp = $("[data-smp]", r), pad = $("[data-pad]", r), slc = $("[data-slice]", r);
+    if (slc) slc.onclick = () => { const mm = document.getElementById("sb2-modal"); if (mm) mm.hidden = true; openSlicer({ spec: s.id, name: s.name, bpm: s.bpm }); };
     add.onclick = () => smpAddTrack(s, add);
     if (smp) smp.onclick = () => smpToSampler(s).catch((e) => toast(e.message, true));
     if (pad) pad.onclick = () => smpToPad(s, SMP_PAD[s.cat] === "hat" && /відкрит|open/i.test(s.name) ? "openhat" : SMP_PAD[s.cat]);
     r.ondblclick = () => smpAddTrack(s, add);
   });
+}
+
+const DND = { item: null, kind: null, mark: null };
+function dndStart(e, kind, item) {
+  DND.item = item;
+  DND.kind = kind;
+  try { e.dataTransfer.setData("text/plain", item.name); e.dataTransfer.effectAllowed = "copy"; } catch (er) {}
+  const m = document.getElementById("sb2-modal");
+  setTimeout(() => { if (m) m.classList.add("sb2-dragging"); document.body.classList.add("dnd-on"); }, 0);
+}
+function dndEnd() {
+  const m = document.getElementById("sb2-modal");
+  if (m) m.classList.remove("sb2-dragging");
+  document.body.classList.remove("dnd-on");
+  dndMark(null);
+  DND.item = null;
+  DND.kind = null;
+}
+function dndMark(info) {
+  if (!DND.mark) {
+    DND.mark = document.createElement("div");
+    DND.mark.className = "dnd-mark";
+    document.body.appendChild(DND.mark);
+  }
+  const mk = DND.mark;
+  if (!info) { mk.hidden = true; return; }
+  mk.hidden = false;
+  Object.assign(mk.style, { left: info.x + "px", top: info.y + "px", width: info.w + "px", height: info.h + "px" });
+  mk.dataset.label = info.label || "";
+}
+function dndTarget(e) {
+  const r = body.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return null;
+  const h = hitClip(e);
+  const snap = (b) => Math.max(0, typeof snapB === "function" ? snapB(b, e.altKey) : b);
+  const beat = snap(h ? h.beat : scrollBeat() + (e.clientX - r.left) / S.ppb);
+  let top = r.top, height = 0;
+  if (h) {
+    let acc = 0;
+    for (const t of tracksAll()) { const lh = laneHeight(t); if (t.id === h.t.id) { top = r.top + acc; height = lh; break; } acc += lh; }
+  }
+  return { t: h ? h.t : null, beat, x: r.left + (beat - scrollBeat()) * S.ppb, top, height, r };
+}
+function dndLabel(tg) {
+  const it = DND.item;
+  if (!it) return "";
+  if (DND.kind === "smp") {
+    if (tg.t && SMP_PAD[it.cat] && it.kind !== "loop" && mt(tg.t.id).inst && mt(tg.t.id).inst.type === "drums") return `${tr("На пад")}: ${tg.t.name}`;
+    return `${tr("Нова аудіодоріжка з такту")} ${hmBarAt(tg.beat)}`;
+  }
+  return tg.t ? `${tr("Звук для")}: ${tg.t.name}` : tr("Нова доріжка з цим звуком");
+}
+(function dndHooks() {
+  document.addEventListener("dragstart", (e) => {
+    const row = e.target.closest && e.target.closest(".sb2-row[draggable=true]");
+    if (!row) return;
+    if (row.dataset.sid) { const s = SMP.items.find((x) => x.id === row.dataset.sid); if (s) dndStart(e, "smp", s); }
+    else if (row.dataset.id) { const x = SBR.items.find((i) => i.id === row.dataset.id); if (x) dndStart(e, "inst", x); }
+  });
+  document.addEventListener("dragend", dndEnd);
+  body.addEventListener("dragover", (e) => {
+    if (!DND.item) return;
+    e.preventDefault();
+    const tg = dndTarget(e);
+    if (!tg) return dndMark(null);
+    if (DND.kind === "smp" && !(tg.t && SMP_PAD[DND.item.cat] && DND.item.kind !== "loop" && mt(tg.t.id).inst && mt(tg.t.id).inst.type === "drums")) dndMark({ x: tg.x, y: tg.r.top, w: 2, h: tg.r.height, label: dndLabel(tg) });
+    else if (tg.t) dndMark({ x: tg.r.left, y: tg.top, w: tg.r.width, h: tg.height, label: dndLabel(tg) });
+    else dndMark({ x: tg.r.left, y: Math.max(tg.r.top, e.clientY - 18), w: tg.r.width, h: 36, label: dndLabel(tg) });
+  });
+  body.addEventListener("dragleave", (e) => { if (!body.contains(e.relatedTarget)) dndMark(null); });
+  body.addEventListener("drop", async (e) => {
+    if (!DND.item) return;
+    e.preventDefault();
+    const tg = dndTarget(e), it = DND.item, kind = DND.kind;
+    dndEnd();
+    if (!tg) return;
+    try {
+      if (kind === "smp") {
+        const drumT = tg.t && mt(tg.t.id).inst && mt(tg.t.id).inst.type === "drums";
+        if (drumT && SMP_PAD[it.cat] && it.kind !== "loop") { SBR.tid = tg.t.id; await smpToPad(it, SMP_PAD[it.cat] === "hat" && /відкрит|open/i.test(it.name) ? "openhat" : SMP_PAD[it.cat]); }
+        else await smpAddTrack(it, null, tg.beat);
+      } else if (tg.t) await sbxAssign(it, tg.t.id);
+      else await sbxNewTrack(it);
+    } catch (er) { toast(er.message, true); }
+  });
+  const heads = $("#heads");
+  if (heads) {
+    heads.addEventListener("dragover", (e) => { if (DND.item && DND.kind === "inst") { e.preventDefault(); const h = e.target.closest(".lane-head"); $$(".lane-head", heads).forEach((x) => x.classList.toggle("dnd-over", x === h)); } });
+    heads.addEventListener("dragleave", () => $$(".lane-head.dnd-over", heads).forEach((x) => x.classList.remove("dnd-over")));
+    heads.addEventListener("drop", async (e) => {
+      if (!DND.item || DND.kind !== "inst") return;
+      e.preventDefault();
+      const it = DND.item, hd = e.target.closest(".lane-head");
+      dndEnd();
+      $$(".lane-head.dnd-over", heads).forEach((x) => x.classList.remove("dnd-over"));
+      const idx = hd ? [...heads.querySelectorAll(".lane-head")].indexOf(hd) : -1;
+      const t = idx >= 0 ? tracksAll()[idx] : null;
+      try { t ? await sbxAssign(it, t.id) : await sbxNewTrack(it); } catch (er) { toast(er.message, true); }
+    });
+  }
+  document.addEventListener("dragover", (e) => {
+    if (!DND.item || DND.kind !== "smp") return;
+    const pad = e.target.closest && e.target.closest(".pad[data-pad]");
+    if (pad) { e.preventDefault(); pad.classList.add("dnd-over"); }
+  });
+  document.addEventListener("dragleave", (e) => { const pad = e.target.closest && e.target.closest(".pad[data-pad]"); if (pad) pad.classList.remove("dnd-over"); });
+  document.addEventListener("drop", async (e) => {
+    const pad = e.target.closest && e.target.closest(".pad[data-pad]");
+    if (!pad || !DND.item || DND.kind !== "smp") return;
+    e.preventDefault();
+    const it = DND.item;
+    dndEnd();
+    pad.classList.remove("dnd-over");
+    SBR.tid = S.sel;
+    await smpToPad(it, pad.dataset.pad);
+  });
+})();
+
+async function smpImport() {
+  let job;
+  try {
+    if (DESK.on && DESK.api && DESK.api.open_folder) {
+      const r = await DESK.api.open_folder().catch(() => null);
+      const paths = Array.isArray(r) ? r : r ? [r] : [];
+      if (!paths.length) return;
+      job = await api.post("/api/soundbank/import", { paths });
+    } else {
+      const files = await new Promise((res) => {
+        const inp = document.createElement("input");
+        inp.type = "file";
+        inp.multiple = true;
+        inp.webkitdirectory = true;
+        inp.onchange = () => res([...inp.files]);
+        inp.click();
+      });
+      const aud = files.filter((f) => /\.(wav|mp3|flac|ogg|aiff?|m4a|opus)$/i.test(f.name));
+      if (!aud.length) return toast(tr("У вибраній папці немає аудіофайлів."), true);
+      const fd = new FormData();
+      aud.slice(0, 3000).forEach((f) => fd.append("files", f, f.webkitRelativePath || f.name));
+      const st = document.getElementById("smp-imp-st");
+      if (st) st.textContent = tr("Завантажую файли…");
+      const r = await fetch("/api/soundbank/import", { method: "POST", body: fd });
+      job = await r.json();
+      if (!r.ok) throw new Error(job.error || "помилка");
+    }
+    if (job.error) throw new Error(job.error);
+    let j;
+    for (;;) {
+      await new Promise((res) => setTimeout(res, 600));
+      j = await api.get(`/api/process/${job.job}`);
+      const st = document.getElementById("smp-imp-st");
+      if (st) st.textContent = `${tr("Розкладаю за категоріями…")} ${Math.round((j.progress || 0) * 100)}%`;
+      if (j.status !== "running") break;
+    }
+    if (j.status === "error") throw new Error(j.error);
+    const res = j.result || {};
+    await smpLoad(true);
+    SMP.cat = "📁 " + tr("Мої семпли");
+    sbxRender();
+    toast(`${tr("Додано")}: ${res.added}${res.skipped ? `, ${tr("пропущено (вже є або тиша)")}: ${res.skipped}` : ""}${res.failed ? `, ${tr("не вдалося прочитати")}: ${res.failed}` : ""}.`);
+  } catch (e) {
+    toast(tr("Не вдалося імпортувати") + ": " + e.message, true);
+    const st = document.getElementById("smp-imp-st");
+    if (st) st.textContent = "";
+  }
 }

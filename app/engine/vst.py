@@ -91,29 +91,60 @@ def scan(progress=None, force=False) -> list[dict]:
                 files.append(p)
     files = sorted(set(files))
     old = {(x["path"], x.get("name")): x for x in c["plugins"]}
-    out = []
-    for i, f in enumerate(files):
+    from concurrent.futures import ThreadPoolExecutor
+
+    done = [0]
+
+    def one(f):
         key = str(f)
         mt = str(int(f.stat().st_mtime))
         cached = [x for (pth, _), x in old.items() if pth == key]
         if cached and c["mtimes"].get(key) == mt and not force:
-            out += cached
+            res = cached
         else:
             try:
-                out += bridge("probe", {"path": key}, timeout=60)
+                res = bridge("probe", {"path": key}, timeout=90)
             except Exception as e:
-                out.append({"path": key, "name": f.stem, "error": str(e)[:300]})
+                res = [{"path": key, "name": f.stem, "error": str(e)[:300]}]
             c["mtimes"][key] = mt
+        done[0] += 1
         if progress:
-            progress((i + 1) / max(1, len(files)))
+            progress(done[0] / max(1, len(files)))
+        return res
+
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        out = [x for res in ex.map(one, files) for x in res]
     c["plugins"] = out
     save_config(c)
     return out
 
 
+def vst2_count() -> int:
+    dirs = []
+    if sys.platform == "win32":
+        for env in ("PROGRAMFILES", "PROGRAMFILES(X86)"):
+            v = os.environ.get(env)
+            if v:
+                dirs += [Path(v) / "VSTPlugins", Path(v) / "Steinberg" / "VstPlugins", Path(v) / "Common Files" / "VST2", Path(v) / "Common Files" / "Steinberg" / "VST2"]
+    elif sys.platform == "darwin":
+        dirs += [Path("/Library/Audio/Plug-Ins/VST"), Path.home() / "Library/Audio/Plug-Ins/VST"]
+    else:
+        dirs += [Path.home() / ".vst", Path("/usr/lib/vst")]
+    n = 0
+    for d in dirs:
+        try:
+            if d.exists():
+                n += sum(1 for p in d.rglob("*") if p.suffix.lower() in (".dll", ".vst", ".so"))
+        except Exception:
+            pass
+        if n > 999:
+            break
+    return n
+
+
 def plugins() -> dict:
     c = config()
-    return {"available": available(), "folders": c["folders"], "default": default_dirs(),
+    return {"available": available(), "folders": c["folders"], "default": default_dirs(), "vst2": vst2_count(),
             "plugins": sorted(c["plugins"], key=lambda x: (x.get("instrument", False), (x.get("name") or "").lower()))}
 
 

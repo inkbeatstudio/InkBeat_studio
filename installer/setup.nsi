@@ -6,7 +6,11 @@ Unicode true
 
 Name "InkBeat"
 Caption "Встановлення InkBeat ${APPVER}"
+!ifdef FULL
+OutFile "${OUTDIR}/InkBeat-Setup-${APPVER}-Full.exe"
+!else
 OutFile "${OUTDIR}/InkBeat-Setup-${APPVER}.exe"
+!endif
 InstallDir "$LOCALAPPDATA\Programs\InkBeat"
 InstallDirRegKey HKCU "Software\InkBeat" "InstallDir"
 RequestExecutionLevel user
@@ -39,10 +43,15 @@ VIAddVersionKey "LegalCopyright" "InkBeat"
 !define MUI_INSTFILESPAGE_COLORS "${FG} ${BG}"
 !define MUI_ABORTWARNING
 !define MUI_ABORTWARNING_TEXT "Перервати встановлення InkBeat?"
-!define MUI_COMPONENTSPAGE_NODESC
+!define MUI_COMPONENTSPAGE_SMALLDESC
 
 !define MUI_WELCOMEPAGE_TITLE "Встановлення InkBeat"
-!define MUI_WELCOMEPAGE_TEXT "InkBeat — музична студія: розбирає пісню на редаговані доріжки й MIDI, має вокальну студію, зведення, мастеринг і відеостудію. Результат зберігається у стандартних форматах і відкривається в будь-якій музичній програмі.$\r$\n$\r$\nPython та інші програми встановлювати не потрібно — усе необхідне інсталятор завантажить сам у папку програми.$\r$\n$\r$\nПотрібне підключення до інтернету: буде завантажено приблизно 0,5 ГБ (з відеокартою NVIDIA — близько 3 ГБ). Це займе від кількох хвилин до пів години."
+!ifdef FULL
+!define MUI_WELCOMEPAGE_TEXT "InkBeat — музична студія: розбирає пісню на редаговані доріжки й MIDI, має вокальну студію, зведення, мастеринг і відеостудію.$\r$\n$\r$\nЦе повний інсталятор: програма й усе потрібне для неї вже всередині, тож встановлення займає близько хвилини і не потребує інтернету.$\r$\n$\r$\nМодуль розбору готової пісні на доріжки (0,25–2,5 ГБ) можна поставити одразу або пізніше з самої програми."
+!endif
+!ifndef FULL
+!define MUI_WELCOMEPAGE_TEXT "InkBeat — музична студія: розбирає пісню на редаговані доріжки й MIDI, має вокальну студію, зведення, мастеринг і відеостудію. Результат зберігається у стандартних форматах і відкривається в будь-якій музичній програмі.$\r$\n$\r$\nPython та інші програми встановлювати не потрібно — усе необхідне інсталятор завантажить сам у папку програми.$\r$\n$\r$\nБазова програма завантажує близько 150 МБ і ставиться за кілька хвилин. Модуль розбору готової пісні на доріжки (ще 0,25–2,5 ГБ) можна поставити одразу або пізніше з самої програми — вона запропонує це сама."
+!endif
 !insertmacro MUI_PAGE_WELCOME
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW DarkPage
 !insertmacro MUI_PAGE_COMPONENTS
@@ -62,7 +71,6 @@ VIAddVersionKey "LegalCopyright" "InkBeat"
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "Ukrainian"
 
-Var LogFile
 
 !macro DarkChildren ID
   FindWindow $0 "#32770" "" $HWNDPARENT
@@ -96,11 +104,11 @@ Function un.DarkPage
   !insertmacro DarkChildren b
 FunctionEnd
 
-!macro Step NUM TOTAL TEXT NAME
+!macro Step NUM TOTAL TEXT STEP NAME
   step_${NAME}:
   DetailPrint " "
   DetailPrint "Крок ${NUM} з ${TOTAL}: ${TEXT}"
-  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\installer\bootstrap.ps1" -Step ${NAME} -Root "$INSTDIR" -Gpu $R9'
+  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\installer\bootstrap.ps1" -Step ${STEP} -Root "$INSTDIR" -Gpu $R9'
   Pop $0
   ${If} $0 != 0
     MessageBox MB_ICONEXCLAMATION|MB_ABORTRETRYIGNORE "Не вдалося виконати крок «${TEXT}».$\r$\n$\r$\nПеревірте підключення до інтернету і натисніть «Повторити». Повний журнал збережено на робочому столі: «InkBeat - install log.txt». Якщо помилка повторюється, надішліть цей файл.$\r$\n$\r$\n«Пропустити» — продовжити без цього кроку (програма може працювати неповністю)." /SD IDABORT IDRETRY step_${NAME} IDIGNORE next_${NAME}
@@ -134,7 +142,10 @@ Section "InkBeat (обов'язково)" SecMain
   CreateShortcut "$SMPROGRAMS\InkBeat\Видалити InkBeat.lnk" "$INSTDIR\Видалити InkBeat.exe"
 SectionEnd
 
-Section "Прискорення відеокартою NVIDIA (якщо є)" SecGpu
+Section /o "Розбір готової пісні на доріжки — встановити зараз" SecSep
+SectionEnd
+
+Section "Прискорення відеокартою NVIDIA для розбору (якщо є)" SecGpu
 SectionEnd
 
 Section "Ярлик на робочому столі" SecDesk
@@ -147,14 +158,29 @@ Section "-Компоненти" SecDeps
     StrCpy $R9 "auto"
   ${EndIf}
   SetDetailsPrint both
-  !insertmacro Step 1 8 "Перевіряю WebView2 (рушій вікна програми)" webview2
-  !insertmacro Step 2 8 "Перевіряю бібліотеки Visual C++ (може з'явитися запит Windows)" vcredist
-  !insertmacro Step 3 8 "Завантажую власний Python для InkBeat" python
-  !insertmacro Step 4 8 "Готую встановлювач пакетів" pip
-  !insertmacro Step 5 8 "Завантажую обчислювальний рушій (найбільший крок)" torch
-  !insertmacro Step 6 8 "Встановлюю модулі аналізу звуку, вікна й VST" deps
-  !insertmacro Step 7 8 "Завантажую модель розділення доріжок" model
-  !insertmacro Step 8 8 "Перевіряю встановлення і готую перший запуск" verify
+  ${If} ${SectionIsSelected} ${SecSep}
+    !insertmacro Step 1 8 "Перевіряю WebView2 (рушій вікна програми)" webview2 webview2
+    !insertmacro Step 2 8 "Перевіряю бібліотеки Visual C++ (може з'явитися запит Windows)" vcredist vcredist
+    !insertmacro Step 3 8 "Завантажую власний Python для InkBeat" python python
+    !insertmacro Step 4 8 "Готую швидкий встановлювач пакетів" pip pip
+    !insertmacro Step 5 8 "Встановлюю модулі звуку, вікна й VST" deps deps
+    !insertmacro Step 6 8 "Завантажую обчислювальний рушій для розбору пісні (найбільший крок)" torch torch
+    !insertmacro Step 7 8 "Завантажую модель розділення доріжок" model model
+    !insertmacro Step 8 8 "Перевіряю встановлення і готую перший запуск" verify verify
+  ${Else}
+!ifdef FULL
+    !insertmacro Step 1 3 "Перевіряю WebView2 (рушій вікна програми)" webview2 webview2c
+    !insertmacro Step 2 3 "Перевіряю бібліотеки Visual C++ (може з'явитися запит Windows)" vcredist vcredistc
+    !insertmacro Step 3 3 "Перевіряю встановлення і готую перший запуск" verify verifyc
+!else
+    !insertmacro Step 1 6 "Перевіряю WebView2 (рушій вікна програми)" webview2 webview2b
+    !insertmacro Step 2 6 "Перевіряю бібліотеки Visual C++ (може з'явитися запит Windows)" vcredist vcredistb
+    !insertmacro Step 3 6 "Завантажую власний Python для InkBeat" python pythonb
+    !insertmacro Step 4 6 "Готую швидкий встановлювач пакетів" pip pipb
+    !insertmacro Step 5 6 "Встановлюю модулі звуку, вікна й VST" deps depsb
+    !insertmacro Step 6 6 "Перевіряю встановлення і готую перший запуск" verify verifyb
+!endif
+  ${EndIf}
   DetailPrint " "
   DetailPrint "Готово."
 SectionEnd

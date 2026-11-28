@@ -345,9 +345,14 @@ function menu(e, items) {
     m.appendChild(b);
   }
   document.body.appendChild(m);
-  const r = m.getBoundingClientRect();
-  m.style.left = Math.min(e.clientX, innerWidth - r.width - 8) + "px";
-  m.style.top = Math.min(e.clientY, innerHeight - r.height - 8) + "px";
+  m.style.maxHeight = Math.max(160, innerHeight - 16) + "px";
+  let r = m.getBoundingClientRect();
+  const below = innerHeight - e.clientY - 8;
+  if (r.height > below && e.clientY > innerHeight / 2) m.style.maxHeight = Math.max(160, e.clientY - 8) + "px";
+  else if (r.height > below) m.style.maxHeight = Math.max(160, below) + "px";
+  r = m.getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(e.clientX, innerWidth - r.width - 8)) + "px";
+  m.style.top = Math.max(8, Math.min(e.clientY, innerHeight - r.height - 8)) + "px";
   setTimeout(() => document.addEventListener("mousedown", closeMenuOutside), 0);
 }
 function closeMenuOutside(e) {
@@ -795,7 +800,13 @@ function previewURL(key) {
 }
 function ensureCtx() {
   if (S.audio && S.audio.ctx) return S.audio;
-  const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 32e3, latencyHint: "interactive" });
+  const AU = UIP.audio || {}, lat = AU.latency || "normal";
+  const opts = lat === "low" ? { latencyHint: 0 } : lat === "safe" ? { latencyHint: "playback" } : { latencyHint: "interactive" };
+  if (AU.rate && AU.rate !== "auto") opts.sampleRate = +AU.rate;
+  else if (lat === "normal" && !AU.rate) opts.sampleRate = 32e3;
+  let ctx;
+  try { ctx = new (window.AudioContext || window.webkitAudioContext)(opts); } catch (e) { ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "interactive" }); }
+  if (AU.sink && typeof ctx.setSinkId === "function") ctx.setSinkId(AU.sink).catch(() => {});
   const out = ctx.createGain();
   out.gain.value = S.vol;
   out.connect(ctx.destination);

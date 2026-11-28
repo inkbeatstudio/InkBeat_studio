@@ -106,7 +106,7 @@ def cmd_render(a):
         events.append((float(s), mido.Message("note_on", note=int(p), velocity=max(1, min(127, int(v))))))
         events.append((float(s) + max(0.01, float(d)), mido.Message("note_off", note=int(p), velocity=0)))
     events.sort(key=lambda e: (e[0], e[1].type == "note_on"))
-    msgs = [(m, t) for t, m in events]
+    msgs = [(bytes(m.bytes()), t) for t, m in events]
     dur = float(a["duration"])
     out = plug(msgs, duration=dur, sample_rate=sr, num_channels=2, reset=True)
     out = np.atleast_2d(out)

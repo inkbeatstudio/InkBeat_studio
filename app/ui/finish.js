@@ -490,6 +490,7 @@ async function kbMidiInit() {
     KB.inputs = [...KB.access.inputs.values()];
     for (const inp of KB.inputs) inp.onmidimessage = (e) => {
       const [st, d1, d2] = e.data, cmd = st & 240;
+      if (e.timeStamp) { const lag = performance.now() - e.timeStamp; if (lag >= 0 && lag < 500) KB.lag = KB.lag == null ? lag : KB.lag * 0.8 + lag * 0.2; }
       if (cmd === 144 && d2 > 0) kbOn(d1, d2);
       else if (cmd === 128 || cmd === 144 && d2 === 0) kbOff(d1);
     };

@@ -57,6 +57,22 @@ function Run-Py([string[]]$a) {
   if ($script:PyCode -ne 0) { throw "python exited with code $($script:PyCode)" }
 }
 
+$Uv = Join-Path $Rt "uv.exe"
+
+function Pip-Install([string[]]$a) {
+  if (Test-Path -LiteralPath $Uv) {
+    $ErrorActionPreference = "Continue"
+    New-Item -ItemType Directory -Force -Path $PipTmp | Out-Null
+    $env:TMP = $PipTmp
+    $env:TEMP = $PipTmp
+    $env:UV_CACHE_DIR = Join-Path $PipTmp "uv-cache"
+    & $Uv pip install --python $Py @a 2>&1 | ForEach-Object { Say "$_" }
+    if ($LASTEXITCODE -eq 0) { return }
+    Say "fast installer failed (code $LASTEXITCODE), using pip"
+  }
+  Run-Py (@("-m", "pip", "install", "--no-warn-script-location") + $a)
+}
+
 function Has-Nvidia {
   if ($Gpu -eq "cpu") { return $false }
   try {
@@ -131,6 +147,17 @@ try {
         Run-Py @($g, "--no-warn-script-location")
       }
       Run-Py @("-m", "pip", "install", "--upgrade", "--no-warn-script-location", "pip", "setuptools", "wheel")
+      if (-not (Test-Path -LiteralPath $Uv)) {
+        try {
+          $uz = Join-Path $Tmp "uv.zip"
+          Get-File "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip" $uz
+          $ud = Join-Path $Tmp "uv"
+          if (Test-Path -LiteralPath $ud) { Remove-Item -LiteralPath $ud -Recurse -Force }
+          Expand-Archive -LiteralPath $uz -DestinationPath $ud -Force
+          $found = Get-ChildItem -LiteralPath $ud -Recurse -Filter "uv.exe" | Select-Object -First 1
+          if ($found) { Copy-Item -LiteralPath $found.FullName -Destination $Uv -Force; Say "fast installer ready" }
+        } catch { Say "fast installer unavailable: $($_.Exception.Message)" }
+      }
     }
     "torch" {
       $gpu = $false
@@ -139,25 +166,31 @@ try {
       if ($gpu) { $want = "1" }
       Say "NVIDIA detected: $gpu"
       Invoke-Py @("-c", "import sys, torch, torchaudio; sys.exit(0 if (torch.version.cuda or not $want) else 3)") -Quiet
-      if ($script:PyCode -eq 0) { Run-Py @("-c", "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"); break }
+      if ($script:PyCode -eq 0) {
+        Run-Py @("-c", "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())")
+        Invoke-Py @("-c", "import demucs") -Quiet
+        if ($script:PyCode -ne 0) { Pip-Install @("demucs==4.0.1") }
+        break
+      }
       if ($gpu) {
         Say "NVIDIA GPU found: installing CUDA build"
-        Invoke-Py @("-m", "pip", "install", "--no-warn-script-location", "torch==$TorchVer+cu124", "torchaudio==$TorchVer+cu124", "--index-url", "https://download.pytorch.org/whl/cu124")
-        if ($script:PyCode -ne 0) {
+        try { Pip-Install @("torch==$TorchVer+cu124", "torchaudio==$TorchVer+cu124", "--index-url", "https://download.pytorch.org/whl/cu124") }
+        catch {
           Say "CUDA build failed, falling back to CPU build"
-          Run-Py @("-m", "pip", "install", "--no-warn-script-location", "torch==$TorchVer+cpu", "torchaudio==$TorchVer+cpu", "--index-url", "https://download.pytorch.org/whl/cpu")
+          Pip-Install @("torch==$TorchVer+cpu", "torchaudio==$TorchVer+cpu", "--index-url", "https://download.pytorch.org/whl/cpu")
         }
       } else {
         Say "no NVIDIA GPU: installing CPU build"
-        Run-Py @("-m", "pip", "install", "--no-warn-script-location", "torch==$TorchVer+cpu", "torchaudio==$TorchVer+cpu", "--index-url", "https://download.pytorch.org/whl/cpu")
+        Pip-Install @("torch==$TorchVer+cpu", "torchaudio==$TorchVer+cpu", "--index-url", "https://download.pytorch.org/whl/cpu")
       }
+      Pip-Install @("demucs==4.0.1")
     }
     "deps" {
       $req = Join-Path $Root "requirements.txt"
       $hashFile = Join-Path $Rt "requirements.sha256"
       $h = (Get-FileHash -LiteralPath $req -Algorithm SHA256).Hash
       if ((Test-Path -LiteralPath $hashFile) -and ((Get-Content -LiteralPath $hashFile -Raw).Trim() -eq $h)) { Say "dependencies up to date"; break }
-      Run-Py @("-m", "pip", "install", "--no-warn-script-location", "-r", $req)
+      Pip-Install @("-r", $req)
       Set-Content -LiteralPath $hashFile -Encoding ASCII -Value $h
     }
     "model" {
@@ -168,8 +201,10 @@ try {
       if (Test-Path -LiteralPath $PipTmp) { Remove-Item -LiteralPath $PipTmp -Recurse -Force -ErrorAction SilentlyContinue }
       Push-Location $Root
       try {
-        Run-Py @("-c", "import numpy, scipy, librosa, soundfile, flask, onnxruntime, mido, torch, demucs, webview; print('all modules OK'); print('cuda', torch.cuda.is_available())")
-        Run-Py @("-c", "import numpy as np, librosa, demucs.pretrained; from app import server; y = (np.random.randn(22050 * 4) * 0.1).astype('float32'); librosa.beat.beat_track(y=y, sr=22050); librosa.pyin(y[:44100], fmin=80, fmax=800, sr=22050); print('warm-up OK')")
+        Run-Py @("-c", "import numpy, scipy, librosa, soundfile, flask, onnxruntime, mido, webview; print('core modules OK')")
+        Invoke-Py @("-c", "import torch, demucs; print('separation module OK, cuda', torch.cuda.is_available())")
+        if ($script:PyCode -ne 0) { Say "separation module not installed yet: the app will offer it" }
+        Run-Py @("-c", "import numpy as np, librosa; from app import server; y = (np.random.randn(22050 * 4) * 0.1).astype('float32'); librosa.beat.beat_track(y=y, sr=22050); librosa.pyin(y[:44100], fmin=80, fmax=800, sr=22050); print('warm-up OK')")
       } finally { Pop-Location }
       Set-Content -LiteralPath (Join-Path $Rt "installed.ok") -Encoding ASCII -Value (Get-Date -Format s)
     }

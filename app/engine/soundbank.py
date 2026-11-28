@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import threading
 import time
@@ -420,7 +421,8 @@ def remove_sonicpi():
 def listing() -> dict:
     ess = _read_index("essentials")
     sp = _read_index("sonicpi")
-    return {"items": ess + sp, "essentials": bool(ess), "sonicpi": bool(sp), "sonicpi_count": len(SONICPI["files"])}
+    us = _read_index("user")
+    return {"items": us + ess + sp, "essentials": bool(ess), "sonicpi": bool(sp), "user": len(us), "sonicpi_count": len(SONICPI["files"])}
 
 
 def path(spec: str) -> Path | None:
@@ -451,3 +453,199 @@ def fit(spec: str, factor: float, semis: float) -> bytes:
     buf = io.BytesIO()
     sf.write(buf, np.atleast_2d(y).T, sr, format="WAV", subtype="PCM_16")
     return buf.getvalue()
+
+
+AUDIO_EXT = {".wav", ".mp3", ".flac", ".ogg", ".aif", ".aiff", ".m4a", ".opus"}
+CAT_RULES = [
+    (r"\b(808|sub ?bass)\b", "808 і баси"),
+    (r"(kick|\bbd\b|\bkck\b|кік|бочк|бас.?барабан)", "Бочки"),
+    (r"(snare|\bsd\b|\bsnr\b|малий|снейр)", "Малі барабани"),
+    (r"(clap|\bclp\b|клеп|хлоп)", "Клепи"),
+    (r"(open ?hat|\boh\b|hi.?hat|\bhh\b|\bch\b|closed ?hat|\bhat\b|хет)", "Хети"),
+    (r"(crash|ride|cymbal|\bcym\b|splash|china|тарілк)", "Тарілки"),
+    (r"(\btom\b|toms|том)", "Томи"),
+    (r"(shaker|conga|bongo|tamb|cowbell|rim|perc|clave|wood ?block|triangle|перкус|шейкер)", "Перкусія"),
+    (r"(riser|uplifter|downlifter|sweep|impact|whoosh|swoosh|\bfx\b|sfx|noise|reverse|transition|райзер|ефект)", "Ефекти й переходи"),
+    (r"(vox|vocal|voice|chant|adlib|вокал|голос)", "Вокальні фрази"),
+    (r"(bass|бас)", "808 і баси"),
+    (r"(chord|stab|pluck|piano|keys|synth|pad|lead|arp|guitar|акорд|плак|синт|гітар)", "Мелодичні звуки"),
+]
+KEY_RX = r"(?<![a-z])([A-G])(#|b|♯|♭)?\s?(m(?:in(?:or)?)?|maj(?:or)?|minor|major)?(?![a-z])"
+
+
+def _name_bpm(s: str):
+    m = re.search(r"(\d{2,3}(?:\.\d+)?)\s?(?:bpm|BPM)", s) or re.search(r"(?:bpm|BPM)\s?(\d{2,3})", s)
+    if m:
+        v = float(m.group(1))
+        if 50 <= v <= 220:
+            return v
+    return None
+
+
+def _name_key(s: str):
+    for m in re.finditer(KEY_RX, s):
+        before = s[max(0, m.start() - 1):m.start()]
+        if before.isalnum():
+            continue
+        if not m.group(2) and not m.group(3):
+            continue
+        tonic = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}[m.group(1)]
+        acc = m.group(2) or ""
+        tonic = (tonic + (1 if acc in ("#", "♯") else -1 if acc in ("b", "♭") else 0)) % 12
+        q = (m.group(3) or "").lower()
+        mode = "minor" if q.startswith("m") and not q.startswith("maj") else "major"
+        return {"tonic": tonic, "mode": mode}
+    return None
+
+
+def _classify(y: np.ndarray, sr: int, name: str, folders: str):
+    import librosa
+
+    text = (folders + " " + name).lower().replace("_", " ").replace("-", " ")
+    mono = np.atleast_2d(y).mean(axis=0)
+    dur = mono.shape[0] / sr
+    bpm = _name_bpm(name) or _name_bpm(folders)
+    key = _name_key(name)
+    loopish = bool(re.search(r"\bloops?\b|луп|\bbreak|\bbeat\b|groove|\btop\b", text)) or (bpm is not None and dur >= 1.5)
+    cat = None
+    for rx, c in CAT_RULES:
+        if re.search(rx, text):
+            cat = c
+            break
+    kind = "hit"
+    seg = mono[: int(sr * 3)]
+    cent = float(np.mean(librosa.feature.spectral_centroid(y=seg, sr=sr))) if len(seg) > 2048 else 2000.0
+    half = mono.shape[0] // 2
+    decaying = half > 0 and float(np.sqrt(np.mean(mono[half:] ** 2))) < 0.55 * float(np.sqrt(np.mean(mono[:half] ** 2)) + 1e-9)
+    if loopish or (dur >= 2.0 and not decaying and cat in (None, "Мелодичні звуки", "Вокальні фрази")):
+        onsets = librosa.onset.onset_detect(y=mono[: int(sr * 20)], sr=sr, units="time") if dur >= 1.5 else []
+        if loopish or len(onsets) >= max(4, dur * 1.2):
+            kind = "loop"
+            if not bpm:
+                from .creative import detect_onsets
+
+                bpm = detect_onsets(np.atleast_2d(y), sr).get("bpm")
+            if cat in (None, "Бочки", "Малі барабани", "Хети", "Клепи", "Перкусія", "Тарілки", "Томи"):
+                cat = "Лупи ударних" if cent > 1200 or cat else "Лупи ударних"
+            elif cat == "808 і баси":
+                cat = "Лупи басу"
+            elif cat == "Мелодичні звуки":
+                cat = "Мелодичні лупи"
+            elif cat == "Вокальні фрази":
+                cat = "Вокальні лупи"
+            if not key and cat in ("Лупи басу", "Мелодичні лупи", "Вокальні лупи"):
+                from .creative import estimate_key
+
+                key = estimate_key(np.atleast_2d(y), sr)
+    if cat is None:
+        if dur < 1.6 or (decaying and dur < 6):
+            part = mono[: int(sr * 0.5)]
+            spec = np.abs(np.fft.rfft(part * np.hanning(len(part)))) ** 2 if len(part) > 256 else np.ones(10)
+            fr = np.fft.rfftfreq(len(part), 1 / sr) if len(part) > 256 else np.linspace(0, sr / 2, 10)
+            tot = float(spec.sum()) + 1e-12
+            low = float(spec[fr < 200].sum()) / tot
+            lowmid = float(spec[(fr >= 150) & (fr < 1000)].sum()) / tot
+            high = float(spec[fr >= 5000].sum()) / tot
+            if low > 0.4:
+                cat = "Бочки"
+            elif high > 0.45 and low < 0.05 and lowmid < 0.06:
+                cat = "Тарілки" if dur > 0.9 else "Хети"
+            elif decaying and dur >= 1.6:
+                cat = "Тарілки" if high > 0.3 else "Ефекти й переходи"
+            elif lowmid > 0.06 and high > 0.08:
+                cat = "Малі барабани"
+            else:
+                cat = "Перкусія"
+        else:
+            cat = "Ефекти й переходи" if cent > 1500 else "Атмосфери"
+    root = None
+    if kind != "loop" and cat in ("808 і баси", "Мелодичні звуки"):
+        try:
+            z = librosa.resample(seg, orig_sr=sr, target_sr=16000)
+            f0, vf, _ = librosa.pyin(z, fmin=30, fmax=1500, sr=16000, frame_length=2048)
+            v = f0[vf & np.isfinite(f0)]
+            if len(v) > 5:
+                root = int(round(float(np.median(librosa.hz_to_midi(v)))))
+                kind = "note"
+        except Exception:
+            pass
+    return {"cat": cat, "kind": kind, "bpm": round(bpm, 2) if bpm else None, "key": key, "root": root, "dur": round(dur, 3)}
+
+
+def import_files(files: list, progress=None, cancel=None) -> dict:
+    import hashlib
+
+    import soundfile as sf
+
+    from .project import load_audio
+
+    d = root() / "user"
+    d.mkdir(parents=True, exist_ok=True)
+    items = _read_index("user")
+    known = {i.get("hash") for i in items}
+    added = skipped = failed = 0
+    total = max(1, len(files))
+    for k, (path, folders) in enumerate(files):
+        if cancel and cancel():
+            break
+        p = Path(path)
+        try:
+            h = hashlib.md5((p.name + str(p.stat().st_size)).encode("utf-8")).hexdigest()[:16]
+            if h in known:
+                skipped += 1
+                continue
+            y, sr = load_audio(p, 44100)
+            y = np.atleast_2d(y)[:2, : int(44100 * 90)]
+            if y.shape[1] < int(0.02 * 44100) or float(np.abs(y).max()) < 1e-4:
+                skipped += 1
+                continue
+            info = _classify(y, 44100, p.stem, folders)
+            fname = f"{h}.wav"
+            _save(d / fname, y, 44100)
+            rn = info["root"]
+            items.append({"id": f"sb:user/{fname}", "name": p.stem[:80], "cat": info["cat"], "kind": info["kind"], "dur": info["dur"], "bpm": info["bpm"],
+                          "key": info["key"], "root": rn, "root_name": f"{NAMES[rn % 12]}{rn // 12 - 1}" if rn is not None else None,
+                          "tags": folders[:120], "pack": "user", "hash": h})
+            known.add(h)
+            added += 1
+        except Exception:
+            failed += 1
+        if progress:
+            progress((k + 1) / total)
+        if added and added % 25 == 0:
+            _write_index("user", items)
+    _write_index("user", items)
+    return {"added": added, "skipped": skipped, "failed": failed, "total": len(items)}
+
+
+def collect(paths: list, limit: int = 5000) -> list:
+    out = []
+    for raw in paths:
+        p = Path(raw)
+        if p.is_dir():
+            for f in sorted(p.rglob("*")):
+                if f.suffix.lower() in AUDIO_EXT and f.is_file():
+                    rel = f.parent.relative_to(p) if f.parent != p else Path("")
+                    out.append((str(f), " ".join([p.name] + list(rel.parts))))
+                    if len(out) >= limit:
+                        return out
+        elif p.suffix.lower() in AUDIO_EXT and p.exists():
+            out.append((str(p), p.parent.name))
+    return out
+
+
+def user_remove(spec: str | None = None) -> dict:
+    items = _read_index("user")
+    keep = []
+    for i in items:
+        if spec and i["id"] != spec:
+            keep.append(i)
+            continue
+        f = path(i["id"])
+        if f:
+            try:
+                f.unlink()
+            except Exception:
+                pass
+    _write_index("user", keep)
+    return {"ok": True, "total": len(keep)}

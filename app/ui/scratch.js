@@ -5,7 +5,7 @@ function openNewProject() {
   careModal("Новий проєкт з нуля", `<p class="muted">Порожній проєкт без пісні: задайте темп і тональність, а далі додавайте MIDI-доріжки, свої аудіофайли або записуйте голос.</p>
     <div class="np-grid">
       <label class="full">Назва<input type="text" id="np-title" maxlength="60" placeholder="Наприклад: Новий біт"></label>
-      <label>Темп, BPM<input type="number" id="np-bpm" min="40" max="260" step="1" value="120"></label>
+      <label>Темп, BPM<input type="number" id="np-bpm" min="40" max="260" step="1" value="${(UIP.newp && UIP.newp.bpm) || 120}"></label>
       <label>Тональність<div style="display:flex;gap:6px"><select id="np-tonic">${keys}</select><select id="np-mode"><option value="minor">мінор</option><option value="major">мажор</option></select></div></label>
       <label>Розмір<div class="np-seg" id="np-bpb">${[4, 3, 6].map((b) => `<button type="button" data-v="${b}" class="${b === NEWP.bpb ? "on" : ""}">${b}/4</button>`).join("")}</div></label>
       <label class="full" data-hint="Готовий старт у стилі жанру: структура, акорди, барабани, бас, акомпанемент і переходи. Темп і лад підставляються самі, їх можна змінити">Шаблон жанру<select id="np-genre"><option value="">— порожній проєкт —</option>${Object.entries(GENRES).map(([k, g]) => `<option value="${k}">${escapeHtml(g.name)} · ${g.bpm} BPM</option>`).join("")}</select></label>

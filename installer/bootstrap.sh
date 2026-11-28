@@ -154,6 +154,7 @@ get_deps() {
 }
 
 get_model() {
+  "$PY" -c "import demucs" >/dev/null 2>&1 || pip_i "demucs==4.0.1" || die "Не вдалося встановити модуль розділення."
   say "  Завантажую модель розділення на доріжки (≈80 МБ)…"
   (cd "$DEST" && "$PY" -c "from demucs.pretrained import get_model; get_model('htdemucs_6s')" >> "$LOG" 2>&1) || die "Не вдалося завантажити модель розділення."
   ok "Модель готова"

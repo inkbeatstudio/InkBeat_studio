@@ -63,6 +63,7 @@ if errorlevel 1 goto :fail
 
 echo.
 echo Завантажую модуль розділення (один раз, близько 80 МБ)...
+"%VPY%" -m pip install demucs==4.0.1
 "%VPY%" -c "from demucs.pretrained import get_model; get_model('htdemucs_6s'); print('OK')"
 
 echo.

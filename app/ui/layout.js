@@ -250,6 +250,19 @@ const MENUS = {
     ["Мастеринг одним кліком…", needProject(() => openMastering())],
     ["Запис вокалу…", needProject(() => openRecorder())]
   ],
+  "Налаштування": () => [
+    ["Усі налаштування…  (Ctrl+,)", () => openSettings("ui")],
+    null,
+    ["Інтерфейс і мова…", () => openSettings("ui")],
+    ["Аудіо і затримка…", () => openSettings("audio")],
+    ["MIDI і клавіші…", () => openSettings("midi")],
+    ["Проєкти й експорт…", () => openSettings("projects")],
+    ["Розбір пісні…", () => openSettings("sep")],
+    ["Звуки і місце на диску…", () => openSettings("sounds")],
+    ["VST-плагіни…", () => openSettings("vst")],
+    ["Оновлення…", () => openSettings("updates")],
+    ["Звіти про помилки…", () => openSettings("reports")]
+  ],
   "Довідка": () => [
     ["Довідка  (F1)", () => $("#help-btn").click()],
     ["Про InkBeat", openAbout]
@@ -261,6 +274,13 @@ const MENUS = {
   bar.innerHTML = Object.keys(MENUS).map((k) => `<button data-menu="${k}">${k}</button>`).join("");
   const brand = $(".brand");
   brand.after(bar);
+  const fit = () => bar.classList.toggle("scrollable", bar.scrollWidth > bar.clientWidth + 2 && bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 2);
+  bar.addEventListener("wheel", (e) => { if (bar.scrollWidth > bar.clientWidth && Math.abs(e.deltaY) > Math.abs(e.deltaX)) { bar.scrollLeft += e.deltaY; e.preventDefault(); fit(); } }, { passive: false });
+  bar.addEventListener("scroll", fit);
+  addEventListener("resize", fit);
+  setTimeout(fit, 300);
+  setTimeout(fit, 1500);
+  bar.addEventListener("mouseenter", fit);
   let openName = null;
   const openMenu = (b) => {
     const r = b.getBoundingClientRect();
